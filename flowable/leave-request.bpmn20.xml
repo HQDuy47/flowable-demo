@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://seatech.demo">
+  <process id="leaveRequest" name="Đơn nghỉ phép" isExecutable="true">
+
+    <!-- Bước bắt đầu: gắn form điền đơn -->
+    <startEvent id="start" flowable:formKey="leaveRequestForm" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="managerApprove" />
+
+    <!-- Việc của trưởng phòng: giao cho user "manager", gắn form duyệt -->
+    <userTask id="managerApprove" name="Trưởng phòng duyệt"
+              flowable:assignee="manager" flowable:formKey="approveLeaveForm" />
+    <sequenceFlow id="f2" sourceRef="managerApprove" targetRef="gw" />
+
+    <!-- Rẽ nhánh theo biến "decision" -->
+    <exclusiveGateway id="gw" />
+    <sequenceFlow id="f3" sourceRef="gw" targetRef="approvedEnd">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'approve'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="f4" sourceRef="gw" targetRef="rejectedEnd">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'reject'}</conditionExpression>
+    </sequenceFlow>
+
+    <endEvent id="approvedEnd" name="Đã duyệt" />
+    <endEvent id="rejectedEnd" name="Bị từ chối" />
+  </process>
+</definitions>
