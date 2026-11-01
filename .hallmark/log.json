@@ -1,0 +1,26 @@
+[
+ {
+  "scope": "app",
+  "shape": "app screen",
+  "theme": "dose",
+  "axes": "light/grotesk-sans/chromatic-green",
+  "hero": "none",
+  "nav": "top bar, tabs by role, user switch",
+  "footer": "none",
+  "imagery": "none",
+  "photos": [],
+  "entry": "list and detail panes",
+  "fingerprint": "two-pane label with tear-off stub and approval stamp",
+  "sections": [
+   "list",
+   "label",
+   "steps",
+   "decision form"
+  ],
+  "signature": "approval stamp naming hour and approver",
+  "waived": [],
+  "prompt": "leave request approval app screen, Flowable demo",
+  "date": "2026-10-31",
+  "mode": "build"
+ }
+]

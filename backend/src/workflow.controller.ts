@@ -21,21 +21,14 @@ export class WorkflowController {
     return this.flowable.startProcess(key, body.values, user);
   }
 
-  /** Đơn do user hiện tại tạo */
-  @Get('requests')
-  listRequests(@Headers('x-user-id') user: string) { return this.flowable.listRequests(user); }
-
   @Get('requests/:id')
   getRequest(@Param('id') id: string) { return this.flowable.getRequest(id); }
 
-  @Post('requests/:id/cancel')
-  cancel(@Param('id') id: string, @Headers('x-user-id') user: string) {
-    return this.flowable.cancelRequest(id, user);
-  }
-
+  /** Việc đang chờ user hiện tại duyệt */
   @Get('tasks')
   listTasks(@Headers('x-user-id') user: string) { return this.flowable.listTasks(user); }
 
+  /** Việc user hiện tại đã duyệt xong */
   @Get('tasks/done')
   listDoneTasks(@Headers('x-user-id') user: string) { return this.flowable.listDoneTasks(user); }
 

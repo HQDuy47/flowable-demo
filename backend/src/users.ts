@@ -1,17 +1,18 @@
 /**
- * Người dùng demo (chưa có đăng nhập thật). Frontend gửi id qua header "x-user-id".
- * Id "manager" phải khớp flowable:assignee trong file BPMN.
+ * Người dùng demo (chưa có đăng nhập thật). Frontend gửi id qua header "x-user-id":
+ * "an" tạo đơn, "manager" duyệt đơn, "admin" thiết kế loại đơn. Id "manager" phải khớp flowable:assignee trong file BPMN.
  */
 export interface User {
   id: string;
   name: string;
   title: string;
-  role: 'employee' | 'approver';
+  role: 'employee' | 'approver' | 'admin';
 }
 
 export const USERS: User[] = [
-  { id: 'an', name: 'Nguyễn Văn An', title: 'Nhân viên', role: 'employee' },
-  { id: 'manager', name: 'Trần Minh Quân', title: 'Trưởng phòng', role: 'approver' },
+  { id: 'an', name: 'Nguyễn Văn An', title: 'Employee', role: 'employee' },
+  { id: 'manager', name: 'Trần Minh Quân', title: 'Department manager', role: 'approver' },
+  { id: 'admin', name: 'Lê Thu Hà', title: 'Administrator', role: 'admin' },
 ];
 
 export const findUser = (id: unknown) => USERS.find((u) => u.id === id);

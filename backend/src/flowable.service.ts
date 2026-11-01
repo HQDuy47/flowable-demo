@@ -18,6 +18,11 @@ type Vars = Record<string, any>;
 const toMap = (vars?: Array<{ name: string; value: unknown }>): Vars =>
   Object.fromEntries((vars ?? []).map((v) => [v.name, v.value]));
 
+/** Người gửi đơn: biến "initiator"; đơn không có biến này thì lấy họ tên điền trong form. */
+const sender = (vars: Vars) =>
+  userRef(vars.initiator) ??
+  (typeof vars.employeeName === 'string' && vars.employeeName ? { id: '', name: vars.employeeName, title: '' } : null);
+
 /** Biến task-local lưu những gì người duyệt gửi ở bước đó → hiện lại trong lịch sử đơn. */
 const SUBMISSION = '_submission';
 
@@ -82,7 +87,7 @@ export class FlowableService {
       this.formCache.set(`${deploymentId}/${form.key}`, form);
     }
     const form = this.formCache.get(cacheKey);
-    if (!form) throw new NotFoundException(`Không tìm thấy form "${formKey}" trong deployment ${deploymentId}`);
+    if (!form) throw new NotFoundException(`Form "${formKey}" was not found in deployment ${deploymentId}`);
     return structuredClone(form);
   }
 
@@ -100,7 +105,7 @@ export class FlowableService {
     return {
       id: p.id,
       processName: p.processDefinitionName,
-      initiator: userRef(vars.initiator),
+      initiator: sender(vars),
       startTime: p.startTime,
       endTime: p.endTime,
       status: this.status(p, vars),
@@ -126,6 +131,20 @@ export class FlowableService {
     };
   }
 
+  /** Deploy một gói .bar (zip gồm BPMN + các file .form) lên Flowable. */
+  async deploy(fileName: string, bytes: Uint8Array): Promise<{ id: string }> {
+    const body = new FormData();
+    body.append('file', new Blob([bytes as BlobPart], { type: 'application/zip' }), fileName);
+    const res = await this.call('post', '/repository/deployments', body);
+    return { id: res.id };
+  }
+
+  /** Phiên bản mới nhất của mọi quy trình đang có: key → version. */
+  async latestVersions(): Promise<Map<string, number>> {
+    const res = await this.call('get', '/repository/process-definitions?latest=true&size=1000');
+    return new Map(res.data.map((p: any) => [p.key, p.version]));
+  }
+
   /** Chỉ các quy trình có start form (bỏ quy trình mẫu sẵn trong image flowable-rest). */
   async listProcesses() {
     const res = await this.call('get', '/repository/process-definitions?latest=true&size=1000');
@@ -135,30 +154,17 @@ export class FlowableService {
 
   async getStartForm(processDefinitionId: string) {
     const def = await this.definition(processDefinitionId);
-    if (!def.startFormKey) throw new NotFoundException(`Quy trình ${def.key} không có start form`);
+    if (!def.startFormKey) throw new NotFoundException(`Process ${def.key} has no start form`);
     return this.loadForm(def.deploymentId, def.startFormKey);
   }
 
   async startProcess(processKey: string, values: Record<string, any>, userId: string) {
-    if (!findUser(userId)) throw new BadRequestException(`Người dùng "${userId}" không tồn tại`);
+    if (!findUser(userId)) throw new BadRequestException(`User "${userId}" does not exist`);
     const res = await this.call('post', '/runtime/process-instances', {
       processDefinitionKey: processKey,
       variables: [...this.toVariables(values), { name: 'initiator', value: userId }],
     });
     return { id: res.id };
-  }
-
-  /** Đơn do một người tạo (cả đang chạy lẫn đã xong). */
-  async listRequests(initiator: string) {
-    const [hist, active] = await Promise.all([
-      this.call('post', '/query/historic-process-instances', {
-        includeProcessVariables: true, sort: 'startTime', order: 'desc', size: 200,
-        variables: [{ name: 'initiator', value: initiator, operation: 'equals', type: 'string' }],
-      }),
-      this.call('get', '/runtime/tasks?size=1000'),
-    ]);
-    const current = new Map(active.data.map((t: any) => [t.processInstanceId, t]));
-    return hist.data.map((p: any) => this.summary(p, current.get(p.id)));
   }
 
   /** Chi tiết đơn: thông tin đã điền (kèm nhãn từ start form) + các bước duyệt. */
@@ -170,7 +176,7 @@ export class FlowableService {
       }),
     ]);
     const p = hist.data[0];
-    if (!p) throw new NotFoundException(`Không tìm thấy đơn ${id}`);
+    if (!p) throw new NotFoundException(`Request ${id} was not found`);
     const vars = toMap(p.variables);
     const def = await this.definition(p.processDefinitionId);
     const startForm = def.startFormKey ? await this.loadForm(def.deploymentId, def.startFormKey) : null;
@@ -194,14 +200,6 @@ export class FlowableService {
     };
   }
 
-  /** Chỉ người tạo được rút đơn, và chỉ khi đơn còn đang chờ. */
-  async cancelRequest(id: string, userId: string) {
-    const vars = toMap(await this.call('get', `/runtime/process-instances/${encodeURIComponent(id)}/variables`));
-    if (vars.initiator !== userId) throw new ForbiddenException('Chỉ người tạo đơn mới được rút đơn');
-    await this.call('delete', `/runtime/process-instances/${encodeURIComponent(id)}?deleteReason=${encodeURIComponent('Người tạo rút đơn')}`);
-    return { ok: true };
-  }
-
   /** Việc đang chờ user xử lý, kèm thông tin đơn. */
   async listTasks(assignee: string) {
     const res = await this.call('post', '/query/tasks', {
@@ -215,7 +213,7 @@ export class FlowableService {
         request: {
           id: t.processInstanceId,
           processName: (await this.definition(t.processDefinitionId)).name,
-          initiator: userRef(toMap(t.variables).initiator),
+          initiator: sender(toMap(t.variables)),
         },
       })),
     );
@@ -239,7 +237,7 @@ export class FlowableService {
             name: t.name,
             time: t.endTime,
             outcome,
-            request: { id: t.processInstanceId, processName: def.name, initiator: userRef(processVars.initiator) },
+            request: { id: t.processInstanceId, processName: def.name, initiator: sender(processVars) },
           };
         }),
     );
@@ -247,7 +245,7 @@ export class FlowableService {
 
   async getTaskForm(taskId: string) {
     const task = await this.call('get', `/runtime/tasks/${encodeURIComponent(taskId)}`);
-    if (!task.formKey) throw new NotFoundException(`Task ${taskId} không gắn form`);
+    if (!task.formKey) throw new NotFoundException(`Task ${taskId} has no form`);
     const def = await this.definition(task.processDefinitionId);
     const [form, vars] = await Promise.all([
       this.loadForm(def.deploymentId, task.formKey),
@@ -263,7 +261,7 @@ export class FlowableService {
 
   async completeTask(taskId: string, values: Record<string, any>, outcome: string | undefined, userId: string) {
     const task = await this.call('get', `/runtime/tasks/${encodeURIComponent(taskId)}`);
-    if (task.assignee !== userId) throw new ForbiddenException('Việc này không được giao cho bạn');
+    if (task.assignee !== userId) throw new ForbiddenException('This task is not assigned to you');
     // Lưu riêng vào task (tên khác field form để không "che" biến process cùng tên)
     await this.call('post', `/runtime/tasks/${taskId}/variables`, [
       { name: SUBMISSION, type: 'string', scope: 'local', value: JSON.stringify({ values, outcome }) },
