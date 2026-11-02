@@ -1,5 +1,4 @@
-import { asUser, http } from '@/shared/api/http';
-import { ADMIN } from '@/shared/config/actors';
+import { http } from '@/shared/api/http';
 
 /** Kiểu trường hỗ trợ (khớp backend/src/request-types.ts). */
 export const FIELD_TYPES = [
@@ -27,13 +26,12 @@ export type RequestTypeInput = {
 };
 
 const enc = encodeURIComponent;
-const admin = asUser(ADMIN);
 
 /** Các API thiết kế loại đơn; chỉ admin được gọi. */
 export const requestTypesApi = {
-  list: () => http.get<RequestType[]>('/request-types', admin).then(r => r.data),
-  get: (key: string) => http.get<RequestType>(`/request-types/${enc(key)}`, admin).then(r => r.data),
-  create: (input: RequestTypeInput) => http.post<RequestType>('/request-types', input, admin).then(r => r.data),
+  list: () => http.get<RequestType[]>('/request-types').then(r => r.data),
+  get: (key: string) => http.get<RequestType>(`/request-types/${enc(key)}`).then(r => r.data),
+  create: (input: RequestTypeInput) => http.post<RequestType>('/request-types', input).then(r => r.data),
   update: ({ key, input }: { key: string; input: RequestTypeInput }) =>
-    http.put<RequestType>(`/request-types/${enc(key)}`, input, admin).then(r => r.data),
+    http.put<RequestType>(`/request-types/${enc(key)}`, input).then(r => r.data),
 };

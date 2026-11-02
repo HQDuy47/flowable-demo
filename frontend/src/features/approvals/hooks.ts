@@ -8,9 +8,9 @@ export const approvalKeys = {
   request: (requestId: string) => [...approvalKeys.all, 'request', requestId] as const,
 };
 
-/** Hàng chờ duyệt của trưởng phòng. Tải lại mỗi khi màn được mở hoặc cửa sổ được focus lại. */
-export function useTasks() {
-  return useQuery({ queryKey: approvalKeys.tasks(), queryFn: approvalsApi.tasks });
+/** Hàng chờ duyệt của người đăng nhập. Tải lại mỗi khi màn được mở hoặc cửa sổ được focus lại. */
+export function useTasks(enabled = true) {
+  return useQuery({ queryKey: approvalKeys.tasks(), queryFn: approvalsApi.tasks, enabled });
 }
 
 export function useTaskForm(taskId: string | undefined) {
@@ -34,6 +34,7 @@ export function useCompleteTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: approvalsApi.complete,
-    onSuccess: () => qc.invalidateQueries({ queryKey: approvalKeys.all }),
+    // không return promise: callback của component chạy ngay, không đợi tải lại (task biến mất làm component bị gỡ, callback sẽ không chạy)
+    onSuccess: () => { qc.invalidateQueries({ queryKey: approvalKeys.all }); },
   });
 }

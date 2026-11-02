@@ -1,8 +1,9 @@
-import { lazy } from 'react';
+import { lazy, Suspense } from 'react';
 import { createHashRouter, Navigate, useParams } from 'react-router-dom';
 import { AppLayout } from './layout/AppLayout';
 
 // Mỗi trang tải riêng khi được mở lần đầu
+const LoginPage = lazy(() => import('@/features/users/pages/LoginPage'));
 const CreateRequestPage = lazy(() => import('@/features/requests/pages/CreateRequestPage'));
 const ApprovalQueuePage = lazy(() => import('@/features/approvals/pages/ApprovalQueuePage'));
 const ApprovalDetailPage = lazy(() => import('@/features/approvals/pages/ApprovalDetailPage'));
@@ -20,6 +21,7 @@ function LegacyRedirect({ to }: { to: string }) {
  * Định tuyến theo hash (#/new, #/approvals/<taskId>) để chạy được với vite preview / file tĩnh mà không cần cấu hình server.
  */
 export const router = createHashRouter([
+  { path: 'login', element: <Suspense fallback={null}><LoginPage /></Suspense> },
   {
     element: <AppLayout />,
     children: [

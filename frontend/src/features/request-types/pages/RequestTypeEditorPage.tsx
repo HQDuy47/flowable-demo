@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Fields, useDynamicForm, type FormModel } from '@/shared/form';
 import { errorMessage } from '@/shared/lib/format';
-import { Cmd, KeyValues, MessageBar, Problem, RecordHeader, Section, Skeleton, When } from '@/shared/ui';
+import { Cmd, KeyValues, Problem, RecordHeader, Section, Skeleton, When } from '@/shared/ui';
 import type { RequestType, RequestTypeInput } from '../api';
 import { FieldEditor, newField, type DraftField } from '../components/FieldEditor';
 import { useRequestType, useRequestTypes, useSaveRequestType } from '../hooks';
@@ -33,26 +34,30 @@ const toInput = (name: string, fields: DraftField[]): RequestTypeInput => ({
 
 function Editor({ saved }: { saved?: RequestType }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const [name, setName] = useState(saved?.name ?? '');
   const [fields, setFields] = useState<DraftField[]>(() => (saved ? toDraft(saved) : [newField()]));
   const [showErrors, setShowErrors] = useState(false);
-  // vừa tạo xong (chuyển từ /request-types/new sang) hoặc vừa lưu phiên bản mới
-  const [notice, setNotice] = useState(() => !!(location.state as { saved?: boolean } | null)?.saved);
   const save = useSaveRequestType();
-  const version = useRequestTypes().data?.find(t => t.key === saved?.key)?.version;
+  // phiên bản chỉ có trong API danh sách; màn tạo mới không cần nên không gọi
+  const version = useRequestTypes(!!saved).data?.find(t => t.key === saved?.key)?.version;
 
   const input = toInput(name, fields);
   const invalid = !input.name || input.fields.some(f => !f.name || (f.type === 'dropdown' && !f.options?.length));
   const dirty = !saved || JSON.stringify(input) !== JSON.stringify(toInput(saved.name, toDraft(saved)));
 
   const submit = () => {
-    save.reset();
-    setNotice(false);
-    if (invalid) { setShowErrors(true); return; }
+    if (invalid) {
+      setShowErrors(true);
+      toast.error('Some details are missing.', { description: 'Name the request type, label every field, and give each dropdown at least one option.' });
+      return;
+    }
     save.mutate({ key: saved?.key, input }, {
-      // trang được tạo lại với bản vừa lưu (key của Editor đổi theo updatedAt), thông báo đi qua state
-      onSuccess: rt => navigate(`/request-types/${encodeURIComponent(rt.key)}`, { replace: true, state: { saved: true } }),
+      // lưu xong về danh sách
+      onSuccess: rt => {
+        toast.success(`Deployed ${rt.name}`, { description: 'Employees can now pick it in New request. Requests already submitted keep the form they were sent with.' });
+        navigate('/request-types', { replace: true });
+      },
+      onError: err => toast.error('The request type was not saved.', { description: errorMessage(err) }),
     });
   };
 
@@ -70,18 +75,6 @@ function Editor({ saved }: { saved?: RequestType }) {
       />
       <div className="body">
         <div className="body__main">
-          {notice && saved && (
-            <MessageBar intent="success" onDismiss={() => setNotice(false)}>
-              <b>Deployed {saved.name}{version ? ` as version ${version}` : ''}.</b> Employees can now pick it in{' '}
-              <Link className="link" to="/new">New request</Link>. Requests already submitted keep the form they were sent with.
-            </MessageBar>
-          )}
-          {save.isError && (
-            <MessageBar intent="error" onDismiss={() => save.reset()}><b>The request type was not saved.</b> {errorMessage(save.error)}</MessageBar>
-          )}
-          {showErrors && invalid && (
-            <MessageBar intent="error"><b>Some details are missing.</b> Name the request type, label every field, and give each dropdown at least one option.</MessageBar>
-          )}
           <Section title="Details">
             <div className="fgrid">
               <div className={`fl fl--wide${showErrors && !input.name ? ' is-invalid' : ''}`}>

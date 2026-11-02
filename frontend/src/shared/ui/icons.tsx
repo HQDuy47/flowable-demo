@@ -22,6 +22,7 @@ export const Icon = {
   down: () => <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" {...P}><path d="m6 9 6 6 6-6" /></svg>,
   trash: () => <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" {...P}><path d="M5 7h14M10 7V4.5h4V7M7 7l.8 12.5h8.4L17 7M10.5 11v5M13.5 11v5" /></svg>,
   save: () => <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" {...P}><path d="M5.5 4.5h10l3 3v12h-13z" /><path d="M8.5 4.5v4h6v-4M8.5 19.5v-5h7v5" /></svg>,
+  logout: () => <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" {...P}><path d="M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14M10 12h10M16.5 8.5 20 12l-3.5 3.5" /></svg>,
   user: () => <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" {...P}><circle cx="12" cy="8.5" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
 };
 

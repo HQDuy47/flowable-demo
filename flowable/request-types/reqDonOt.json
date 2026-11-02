@@ -24,10 +24,10 @@
       "id": "moTa",
       "name": "Mô tả",
       "type": "multi-line-text",
-      "required": false
+      "required": true
     }
   ],
   "createdAt": "2026-11-01T04:15:37.920Z",
-  "updatedAt": "2026-11-01T04:15:37.920Z",
+  "updatedAt": "2026-11-02T10:06:37.525Z",
   "updatedBy": "admin"
 }

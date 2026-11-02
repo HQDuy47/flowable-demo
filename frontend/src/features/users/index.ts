@@ -1,2 +1,2 @@
 export type { User, UserRef } from './api';
-export { useUser, useUsers } from './hooks';
+export { useLogin, useLogout, useUser, useUsers } from './hooks';

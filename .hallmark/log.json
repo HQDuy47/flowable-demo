@@ -1,5 +1,20 @@
 [
  {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "app",
+  "shape": "app screen",
+  "theme": "brand",
+  "prompt": "demo sign-in for maker, checker and admin roles",
+  "signature": "the empty navy rail holding the demo accounts where the signed-in name sits",
+  "sections": [
+   "rail",
+   "sign-in form"
+  ],
+  "waived": [],
+  "date": "2026-11-02"
+ },
+ {
   "scope": "app",
   "shape": "app screen",
   "theme": "dose",

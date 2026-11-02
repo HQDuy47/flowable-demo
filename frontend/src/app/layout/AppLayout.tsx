@@ -1,35 +1,56 @@
 import { Suspense, useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useMatch } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { useTasks } from '@/features/approvals';
-import { useUser } from '@/features/users';
+import { useLogout } from '@/features/users';
+import { getSession, type SessionUser } from '@/shared/auth/session';
 import { code, initials } from '@/shared/lib/format';
-import { Ic, Problem, Skeleton } from '@/shared/ui';
-import { NAV, navOf } from './nav';
+import { Cmd, Ic, Skeleton } from '@/shared/ui';
+import { homeOf, NAV, navOf, TAB_TITLE } from './nav';
 
-/** Khung app: sidebar, thanh trên (breadcrumb + người đang thao tác), vùng nội dung. */
+/** Chặn route: chưa đăng nhập → /login; mở màn không thuộc vai trò của mình → về màn đầu của vai trò đó. */
 export function AppLayout() {
+  const { pathname } = useLocation();
+  const user = getSession();
+  if (!user) return <Navigate to="/login" replace />;
+  const current = navOf(pathname);
+  if (!current || current.role !== user.role) return <Navigate to={homeOf(user.role)} replace />;
+  return <Shell user={user} current={current} />;
+}
+
+/** Khung app: sidebar (chỉ các mục của vai trò), thanh trên (breadcrumb + người đăng nhập), vùng nội dung. */
+function Shell({ user, current }: { user: SessionUser; current: (typeof NAV)[number] }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const logout = useLogout();
   const [navOpen, setNavOpen] = useState(false);
   useEffect(() => setNavOpen(false), [location.pathname]);
+  // Chữ trên thanh tab theo vai trò; rời khung app (đăng xuất) thì trả lại chữ cũ
+  useEffect(() => {
+    const prev = document.title;
+    document.title = TAB_TITLE[user.role];
+    return () => { document.title = prev; };
+  }, [user.role]);
 
-  const current = navOf(location.pathname);
-  const actor = useUser(current?.actor ?? '');
-  // Hàng chờ nằm ở đây để menu hiện số đơn chờ duyệt
-  const tasks = useTasks();
+  const items = NAV.filter(n => n.role === user.role);
+  const home = homeOf(user.role);
+  // Hàng chờ nằm ở đây để menu hiện số đơn chờ duyệt (chỉ người duyệt)
+  const tasks = useTasks(user.role === 'approver');
   const taskMatch = useMatch('/approvals/:taskId');
   const openTask = taskMatch ? tasks.data?.find(t => t.id === taskMatch.params.taskId) : undefined;
 
   const crumbs = [
-    { label: 'Requests', to: '/new' },
-    ...(current ? [{ label: current.name, to: current.path }] : []),
+    { label: 'Requests', to: home },
+    { label: current.name, to: current.path },
     ...(openTask ? [{ label: code(openTask.request.id), to: undefined }] : []),
   ];
+
+  const signOut = () => { logout(); navigate('/login', { replace: true }); };
 
   return (
     <div className={`app${navOpen ? ' nav-open' : ''}`}>
       <nav className="snav" id="snav" aria-label="Main navigation">
-        <Link className="snav__logo" to="/new"><span className="snav__mark" aria-hidden="true">RQ</span>Requests</Link>
-        {NAV.map(item => {
+        <Link className="snav__logo" to={home}><span className="snav__mark" aria-hidden="true">RQ</span>Requests</Link>
+        {items.map(item => {
           const count = item.path === '/approvals' ? tasks.data?.length : undefined;
           return (
             <NavLink key={item.path} className="snav__item" to={item.path}>
@@ -39,7 +60,7 @@ export function AppLayout() {
             </NavLink>
           );
         })}
-        {actor.data && <span className="snav__me"><Ic name="user" />{actor.data.name}</span>}
+        <span className="snav__me"><Ic name="user" />{user.name}</span>
       </nav>
       <button type="button" className="scrim" tabIndex={-1} aria-label="Close menu" onClick={() => setNavOpen(false)} />
 
@@ -56,14 +77,12 @@ export function AppLayout() {
               </span>
             ))}
           </nav>
-          {actor.data && (
-            <div className="me" title={`Acting as ${actor.data.title.toLowerCase()}`}>
-              <span className="me__avatar" aria-hidden="true">{initials(actor.data.name)}</span>
-              <span className="me__text"><b>{actor.data.name}</b><small>{actor.data.title}</small></span>
-            </div>
-          )}
+          <div className="me" title={`Signed in as ${user.title.toLowerCase()}`}>
+            <span className="me__avatar" aria-hidden="true">{initials(user.name)}</span>
+            <span className="me__text"><b>{user.name}</b><small>{user.title}</small></span>
+            <Cmd icon="logout" label="Sign out" onClick={signOut} />
+          </div>
         </header>
-        {actor.isError && <div className="pad"><Problem error={actor.error} onRetry={() => actor.refetch()} /></div>}
         <Suspense fallback={<div className="pad"><Skeleton rows={8} /></div>}>
           <Outlet />
         </Suspense>

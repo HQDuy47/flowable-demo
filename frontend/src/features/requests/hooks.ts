@@ -28,6 +28,7 @@ export function useStartProcess() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: requestsApi.start,
-    onSuccess: () => qc.invalidateQueries({ queryKey: approvalKeys.all }),
+    // không return promise: callback của component chạy ngay, không đợi tải lại (task biến mất làm component bị gỡ, callback sẽ không chạy)
+    onSuccess: () => { qc.invalidateQueries({ queryKey: approvalKeys.all }); },
   });
 }

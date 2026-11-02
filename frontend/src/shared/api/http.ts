@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { getSession } from '@/shared/auth/session';
 
 /**
  * HTTP client dùng chung. Mọi lời gọi đi qua proxy "/api" của Vite tới backend NestJS.
@@ -27,5 +28,9 @@ http.interceptors.response.use(
   },
 );
 
-/** Backend lấy người dùng hiện tại từ header "x-user-id" (chưa có đăng nhập thật). */
-export const asUser = (userId: string) => ({ headers: { 'x-user-id': userId } });
+/** Backend lấy người dùng hiện tại từ header "x-user-id": gắn tự động theo người đã đăng nhập. */
+http.interceptors.request.use(config => {
+  const user = getSession();
+  if (user) config.headers.set('x-user-id', user.id);
+  return config;
+});

@@ -25,33 +25,33 @@ cd frontend; npm run dev
 
 ## Người dùng và vai trò
 
-Chưa có đăng nhập. Frontend gửi id người dùng qua header `x-user-id`. Danh sách ở `backend/src/users.ts`, hằng số ở `frontend/src/shared/config/actors.ts`.
+Đăng nhập demo ở `#/login` qua `POST /api/login`. Mật khẩu chung là `123456` (`DEMO_PASSWORD` trong `backend/src/users.ts`), chưa có token. Phiên lưu ở sessionStorage, mỗi tab một phiên (`frontend/src/shared/auth/session.ts`). Axios interceptor tự gắn header `x-user-id`. Backend vẫn tin header này.
 
 | Id | Tên | Vai trò | Màn |
 |---|---|---|---|
-| `an` | Nguyễn Văn An | employee | New request |
-| `manager` | Trần Minh Quân | approver | Approvals (phải khớp `flowable:assignee` trong BPMN) |
+| `maker` | Nguyễn Văn An | employee (maker) | New request |
+| `checker` | Trần Minh Quân | approver (checker) | Approvals (phải khớp `flowable:assignee` trong BPMN) |
 | `admin` | Lê Thu Hà | admin | Request types |
 
-Mỗi mục menu gắn một người thao tác (`frontend/src/app/layout/nav.ts`). Topbar hiện người đó.
+Mỗi mục menu gắn một vai trò (`frontend/src/app/layout/nav.ts`). `AppLayout` chỉ hiện các mục của vai trò đó. Chưa đăng nhập thì chuyển về `/login`. Mở màn của vai trò khác thì bị đưa về màn đầu của vai trò mình. Topbar hiện người đăng nhập và nút **Sign out**.
 
 ## Flow của web
 
 Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 
-### 1. New request (`#/new/:processId?`, vai trò `an`)
+### 1. New request (`#/new/:processId?`, vai trò `maker`)
 1. `GET /api/processes` trả về các loại đơn có start form. Không có `processId` thì chuyển sang loại đầu tiên.
 2. Chọn loại đơn bằng các nút pill (`ProcessPicker`). `GET /api/processes/:id/start-form` tải form. `employeeName` được điền sẵn.
 3. Form được vẽ động bằng `shared/form` (`useDynamicForm` + `Fields`), kiểm tra các trường bắt buộc.
-4. Nút **Submit for approval** (hàng tiêu đề, bên phải) gọi `POST /api/processes/:key/start`. Thành công thì hiện thông báo kèm mã đơn, form được làm trống, hàng chờ duyệt được tải lại.
+4. Nút **Submit for approval** (hàng tiêu đề, bên phải) gọi `POST /api/processes/:key/start`. Thành công thì hiện toast kèm mã đơn, form được làm trống, hàng chờ duyệt được tải lại.
 
-### 2. Approvals (`#/approvals`, `#/approvals/:taskId`, vai trò `manager`)
+### 2. Approvals (`#/approvals`, `#/approvals/:taskId`, vai trò `checker`)
 1. `GET /api/tasks` trả về các đơn chờ duyệt. Bảng có ô lọc; bấm vào dòng để mở đơn. Số đơn chờ hiện cạnh menu.
 2. Trang chi tiết:
    - `GET /api/tasks/:id/form` tải form duyệt (các trường chỉ đọc + `managerComment`);
    - `GET /api/requests/:id` tải thông tin đơn, timeline và lịch sử.
 3. **Approve** mở hộp thoại xác nhận. **Reject** mở hộp thoại bắt buộc nhập ý kiến. Cả hai gọi `POST /api/tasks/:id/complete` với `{ outcome, values }`. Backend ghi biến `decision`, gateway trong BPMN rẽ nhánh theo biến này.
-4. Xong thì quay về `#/approvals` với `state.decision`, và hàng chờ hiện thông báo một lần.
+4. Xong thì hiện toast rồi quay về `#/approvals`.
 
 ### 3. Request types (`#/request-types`, `#/request-types/new`, `#/request-types/:key`, vai trò `admin`)
 1. Danh sách loại đơn (`GET /api/request-types`): tên, process key, số trường, phiên bản trên Flowable.
@@ -71,6 +71,7 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 | Method | Path | Ghi chú |
 |---|---|---|
 | GET | `users` | người dùng demo |
+| POST | `login` | `{ username, password }`, 401 nếu sai |
 | GET | `processes` | loại đơn có start form |
 | GET | `processes/:id/start-form` | form model (.form) |
 | POST | `processes/:key/start` | `{ values }`, header `x-user-id` |
@@ -87,7 +88,7 @@ Image Flowable REST không có form engine. Backend tự đọc tài nguyên `.f
 ```
 src/app/         App (QueryClient, Router, Devtools), router.tsx, layout/AppLayout.tsx, layout/nav.ts
 src/features/    requests/, approvals/, request-types/, users/: mỗi feature có api.ts, hooks.ts, components/, pages/, index.ts
-src/shared/      api/http.ts (axios + asUser), config/actors.ts, form/ (form động), lib/format.ts, ui/ (Cmd, Dialog, MessageBar, RecordHeader, Section, icons...)
+src/shared/      api/http.ts (axios, gắn x-user-id), auth/session.ts (phiên đăng nhập), form/ (form động), lib/format.ts, ui/ (Cmd, Dialog, MessageBar, RecordHeader, Section, icons...)
 src/styles/      tokens.css, base.css, index.css
 ```
 
@@ -99,6 +100,7 @@ src/styles/      tokens.css, base.css, index.css
 
 - Phong cách: sidebar navy, mục đang chọn màu vàng, nội dung nền trắng, font Inter.
 - Nút thao tác nằm trên hàng tiêu đề, bên phải (`RecordHeader actions`). Không có nút làm mới.
+- Thông báo thành công / thất bại của một thao tác dùng toast của `sonner` (`toast.success`, `toast.error`; `<Toaster>` trong `App.tsx`, màu gán bằng token cuối `index.css`). Lỗi tải dữ liệu vẫn hiện trên trang (`Problem`, có nút Retry).
 - Màu, font, khoảng cách chỉ dùng token trong `tokens.css`, không viết màu trực tiếp. Dòng đầu `index.css` là stamp của Hallmark: giữ nguyên.
 - Mọi thứ tương tác phải có `:focus-visible`. Svg icon có `aria-hidden`. Không dùng `transition: all`.
 - Người dùng hay đổi ý ("để lại như cũ"): sửa đúng phạm vi được yêu cầu, không tự đổi phần khác.

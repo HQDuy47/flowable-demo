@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useDynamicForm, type FormModel } from '@/shared/form';
 import { code, errorMessage } from '@/shared/lib/format';
 import { Cmd, CommandBar, Empty, KeyValues, Problem, RecordHeader, Section, Skeleton, Tabs, When } from '@/shared/ui';
@@ -7,7 +8,7 @@ import { outcomeAction, STATUS_LABEL, StatusBadge } from '../components/badges';
 import { DecisionDialog } from '../components/DecisionDialog';
 import { HistoryTable, RequestFields, Timeline } from '../components/RequestInfo';
 import { useCompleteTask, useRequestDetail, useTaskForm, useTasks } from '../hooks';
-import type { DecisionNotice, RequestDetail, Task } from '../types';
+import type { RequestDetail, Task } from '../types';
 
 /** Trang duyệt một đơn: thông tin đơn, dòng thời gian, nút Duyệt / Từ chối. */
 export default function ApprovalDetailPage() {
@@ -56,13 +57,16 @@ function Decide({ task, request: r, form }: { task: Task; request: RequestDetail
       { taskId: task.id, values: rejecting ? ctl.payload() : {}, outcome: asking.id || undefined },
       {
         onSuccess: () => {
-          const decision: DecisionNotice = { code: code(r.id), outcome: rejecting ? 'rejected' : 'approved', reject: rejecting };
-          navigate('/approvals', { state: { decision } });
+          const text = `Request ${code(r.id)} was ${rejecting ? 'rejected' : 'approved'}.`;
+          if (rejecting) toast.warning('Decision saved', { description: text });
+          else toast.success('Decision saved', { description: text });
+          navigate('/approvals');
         },
+        onError: err => toast.error('The decision was not saved.', { description: errorMessage(err) }),
       },
     );
   };
-  const close = () => { setAsking(null); complete.reset(); };
+  const close = () => setAsking(null);
 
   return (
     <>
@@ -85,7 +89,6 @@ function Decide({ task, request: r, form }: { task: Task; request: RequestDetail
         ctl={ctl}
         commentFields={rejectForm.fields.filter(f => !f.readOnly)}
         busy={complete.isPending}
-        error={complete.isError ? errorMessage(complete.error) : null}
         onConfirm={confirm}
         onClose={close}
       />

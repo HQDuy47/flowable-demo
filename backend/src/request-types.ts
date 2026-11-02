@@ -32,7 +32,7 @@ export interface RequestTypeInput {
 }
 
 /** Người duyệt của mọi loại đơn thiết kế từ giao diện (khớp users.ts). */
-export const APPROVER = 'manager';
+export const APPROVER = 'checker';
 
 /** Tên biến đã dùng trong quy trình hoặc backend; trường của người dùng không được trùng. */
 const RESERVED = new Set(['initiator', 'decision', 'managerComment', '_submission']);

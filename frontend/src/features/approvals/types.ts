@@ -35,6 +35,3 @@ export type RequestDetail = {
   fields: { id: string; label: string; type: string; value: unknown }[];
   steps: Step[];
 };
-
-/** Quyết định vừa lưu, mang sang danh sách chờ để báo cho người duyệt. */
-export type DecisionNotice = { code: string; outcome: string; reject: boolean };

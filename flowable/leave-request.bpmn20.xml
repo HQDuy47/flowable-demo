@@ -9,9 +9,9 @@
     <startEvent id="start" flowable:formKey="leaveRequestForm" />
     <sequenceFlow id="f1" sourceRef="start" targetRef="managerApprove" />
 
-    <!-- Việc của trưởng phòng: giao cho user "manager", gắn form duyệt -->
+    <!-- Việc của trưởng phòng: giao cho user "checker", gắn form duyệt -->
     <userTask id="managerApprove" name="Trưởng phòng duyệt"
-              flowable:assignee="manager" flowable:formKey="approveLeaveForm" />
+              flowable:assignee="checker" flowable:formKey="approveLeaveForm" />
     <sequenceFlow id="f2" sourceRef="managerApprove" targetRef="gw" />
 
     <!-- Rẽ nhánh theo biến "decision" -->

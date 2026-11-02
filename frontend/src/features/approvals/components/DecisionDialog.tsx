@@ -1,6 +1,6 @@
 import { Fields, type Field, type FormCtl } from '@/shared/form';
 import { code } from '@/shared/lib/format';
-import { Cmd, Dialog, MessageBar } from '@/shared/ui';
+import { Cmd, Dialog } from '@/shared/ui';
 import type { RequestDetail } from '../types';
 import { outcomeAction } from './badges';
 
@@ -8,13 +8,12 @@ import { outcomeAction } from './badges';
  * Hộp thoại quyết định: Duyệt thì chỉ hỏi xác nhận, Từ chối thì bắt buộc ghi lý do.
  * `outcome` null là đang đóng.
  */
-export function DecisionDialog({ outcome, request: r, ctl, commentFields, busy, error, onConfirm, onClose }: {
+export function DecisionDialog({ outcome, request: r, ctl, commentFields, busy, onConfirm, onClose }: {
   outcome: { id: string; name: string } | null;
   request: RequestDetail;
   ctl: FormCtl;
   commentFields: Field[];
   busy: boolean;
-  error: string | null;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -40,7 +39,6 @@ export function DecisionDialog({ outcome, request: r, ctl, commentFields, busy, 
       ) : (
         <p>{action} request <b>{code(r.id)}</b> from {sender}? Once confirmed, it leaves the approval queue.</p>
       )}
-      {error && <MessageBar intent="error"><b>The decision was not saved.</b> {error}</MessageBar>}
     </Dialog>
   );
 }

@@ -1,18 +1,17 @@
 import { useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useUser } from '@/features/users';
-import { EMPLOYEE } from '@/shared/config/actors';
+import { getSession } from '@/shared/auth/session';
 import type { FormModel } from '@/shared/form';
 import { Empty, Problem, Skeleton } from '@/shared/ui';
 import type { Process } from '../api';
-import { CreateRequestForm, type SentNotice } from '../components/CreateRequestForm';
+import { CreateRequestForm } from '../components/CreateRequestForm';
 import { useProcesses, useStartForm } from '../hooks';
 
 /** Trang lập đơn (#/new/<processId>). Không có processId thì mở loại đơn đầu tiên. */
 export default function CreateRequestPage() {
   const { processId } = useParams<{ processId?: string }>();
   const processes = useProcesses();
-  const [sent, setSent] = useState<SentNotice | null>(null);
   // tăng sau mỗi lần gửi để form được làm trống
   const [round, setRound] = useState(0);
 
@@ -35,19 +34,17 @@ export default function CreateRequestPage() {
       key={`${chosen.id}-${round}`}
       process={chosen}
       processes={processes.data}
-      sent={sent}
-      onDismissSent={() => setSent(null)}
-      onSent={id => { setSent({ id, name: chosen.name }); setRound(r => r + 1); }}
+      onSent={() => setRound(r => r + 1)}
     />
   );
 }
 
 function StartFormLoader({ process, ...rest }: {
   process: Process; processes: Process[];
-  sent: SentNotice | null; onDismissSent: () => void; onSent: (requestId: string) => void;
+  onSent: () => void;
 }) {
   const form = useStartForm(process.id);
-  const employee = useUser(EMPLOYEE).data;
+  const employee = useUser(getSession()?.id ?? '').data;
 
   if (form.isError) return <div className="pad"><Problem error={form.error} onRetry={() => form.refetch()} /></div>;
   if (!form.data) return <div className="pad"><Skeleton rows={8} /></div>;

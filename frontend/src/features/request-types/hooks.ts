@@ -8,8 +8,8 @@ export const requestTypeKeys = {
   detail: (key: string) => [...requestTypeKeys.all, 'detail', key] as const,
 };
 
-export function useRequestTypes() {
-  return useQuery({ queryKey: requestTypeKeys.list(), queryFn: requestTypesApi.list });
+export function useRequestTypes(enabled = true) {
+  return useQuery({ queryKey: requestTypeKeys.list(), queryFn: requestTypesApi.list, enabled });
 }
 
 export function useRequestType(key: string | undefined) {

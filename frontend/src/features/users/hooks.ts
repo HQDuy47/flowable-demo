@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { setSession } from '@/shared/auth/session';
 import { usersApi } from './api';
 
 export const userKeys = {
@@ -10,7 +11,22 @@ export function useUsers() {
   return useQuery({ queryKey: userKeys.all, queryFn: usersApi.list, staleTime: Infinity });
 }
 
-/** Một người dùng theo id (vd. EMPLOYEE, MANAGER). */
+/** Đăng nhập: lưu phiên và xoá cache của người trước (dữ liệu phụ thuộc người dùng). */
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: usersApi.login,
+    onSuccess: user => { qc.clear(); setSession(user); },
+  });
+}
+
+/** Đăng xuất: xoá phiên và cache. */
+export function useLogout() {
+  const qc = useQueryClient();
+  return () => { setSession(null); qc.clear(); };
+}
+
+/** Một người dùng theo id (vd. người đang đăng nhập). */
 export function useUser(id: string) {
   const users = useUsers();
   return { ...users, data: users.data?.find(u => u.id === id) };
