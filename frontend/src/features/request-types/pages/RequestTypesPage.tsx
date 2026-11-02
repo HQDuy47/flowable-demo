@@ -24,14 +24,14 @@ export default function RequestTypesPage() {
         ) : (
           <div className="grid-wrap">
             <table className="grid grid--rows">
-              <thead><tr><th>Name</th><th>Process key</th><th>Fields</th><th>Version</th><th>Updated</th></tr></thead>
+              <thead><tr><th>Name</th><th>Key</th><th>Fields</th><th>Version</th><th>Updated</th></tr></thead>
               <tbody>
                 {types.data.map(t => (
                   <tr key={t.key} onClick={() => navigate(open(t.key))}>
                     <td><Link className="link" to={open(t.key)} onClick={e => e.stopPropagation()}>{t.name}</Link></td>
                     <td className="mono">{t.key}</td>
                     <td>{t.fields.length}</td>
-                    <td>{t.version ? `v${t.version}` : <span className="badge badge--pending">Not deployed</span>}</td>
+                    <td>v{t.version}</td>
                     <td><When at={t.updatedAt} /></td>
                   </tr>
                 ))}

@@ -1,66 +1,29 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  OnModuleInit,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import JSZip from 'jszip';
-import { FlowableService } from './flowable.service.js';
 import {
-  approveForm,
-  approveFormKey,
-  bpmn,
-  normalize,
-  processKeyFor,
-  startForm,
-  startFormKey,
-  type RequestType,
-  type RequestTypeInput,
+  approveForm, normalize, parseFormKey, startForm, typeKeyFor,
+  type RequestType, type RequestTypeInput, type TypeVersion,
 } from './request-types.js';
 
 /**
- * Loại đơn thiết kế từ giao diện. Mỗi bản thiết kế lưu thành một file JSON
- * (mặc định flowable/request-types/<key>.json) và được deploy lên Flowable.
- * Flowable dùng DB trong bộ nhớ, nên khi backend khởi động, loại đơn nào chưa có trên Flowable sẽ được deploy lại.
+ * Loại đơn thiết kế từ giao diện. Mỗi loại đơn lưu thành một file JSON
+ * (mặc định flowable/request-types/<key>.json) gồm mọi phiên bản. Không deploy gì lên Flowable:
+ * mọi loại đơn chạy chung quy trình requestApproval (FlowableService tự deploy lúc khởi động).
  */
 @Injectable()
 export class RequestTypesService implements OnModuleInit {
   private readonly log = new Logger(RequestTypesService.name);
-  private readonly dir = resolve(
-    process.env.REQUEST_TYPES_DIR ??
-      join(process.cwd(), '..', 'flowable', 'request-types'),
-  );
-
-  constructor(private readonly flowable: FlowableService) {}
+  private readonly dir = resolve(process.env.REQUEST_TYPES_DIR ?? join(process.cwd(), '..', 'flowable', 'request-types'));
 
   async onModuleInit() {
     await mkdir(this.dir, { recursive: true });
-    try {
-      const versions = await this.flowable.latestVersions();
-      for (const rt of await this.readAll()) {
-        if (versions.has(rt.key)) continue;
-        await this.deploy(rt);
-        this.log.log(`Redeployed request type "${rt.name}" (${rt.key})`);
-      }
-    } catch (e) {
-      // Flowable chưa chạy: bỏ qua, loại đơn sẽ được deploy ở lần lưu tiếp theo
-      this.log.warn(
-        `Could not redeploy request types: ${(e as Error).message}`,
-      );
-    }
   }
 
-  /** Mọi loại đơn đã thiết kế, kèm phiên bản đang chạy trên Flowable (null nếu chưa deploy). */
+  /** Mọi loại đơn, mới sửa lên đầu. Không trả danh sách phiên bản cho gọn. */
   async list() {
-    const [types, versions] = await Promise.all([
-      this.readAll(),
-      this.flowable.latestVersions().catch(() => new Map<string, number>()),
-    ]);
-    return types
-      .map((rt) => ({ ...rt, version: versions.get(rt.key) ?? null }))
+    return (await this.readAll())
+      .map(({ versions: _, ...rt }) => rt)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
@@ -70,39 +33,46 @@ export class RequestTypesService implements OnModuleInit {
     return rt;
   }
 
-  /** Tạo loại đơn mới: sinh khoá quy trình không trùng, lưu file, deploy. */
+  /** Một phiên bản cụ thể (đơn đã gửi dùng hàm này để dựng lại form lúc gửi). Không có thì trả null. */
+  async version(key: unknown, version: unknown): Promise<TypeVersion | null> {
+    if (typeof key !== 'string') return null;
+    const rt = (await this.readAll()).find((t) => t.key === key);
+    return rt?.versions.find((v) => v.version === Number(version)) ?? null;
+  }
+
+  /** Form theo formKey "<loại đơn>:<phiên bản>:<start|approve>". Không có thì trả null. */
+  async formByKey(formKey: unknown) {
+    const k = parseFormKey(formKey);
+    const v = k && (await this.version(k.key, k.version));
+    if (!k || !v) return null;
+    return k.kind === 'start' ? startForm(k.key, v) : approveForm(k.key, v);
+  }
+
+  /** Tạo loại đơn mới: sinh khoá không trùng, lưu phiên bản 1. */
   async create(input: RequestTypeInput, userId: string) {
     const { name, fields } = this.check(input);
-    const taken = new Set([
-      ...(await this.readAll()).map((t) => t.key),
-      ...(await this.flowable.latestVersions()).keys(),
-    ]);
+    const key = typeKeyFor(name, new Set((await this.readAll()).map((t) => t.key)));
     const now = new Date().toISOString();
     const rt: RequestType = {
-      key: processKeyFor(name, taken),
-      name,
-      fields,
-      createdAt: now,
-      updatedAt: now,
-      updatedBy: userId,
+      key, name, fields, version: 1,
+      versions: [{ version: 1, name, fields, savedAt: now, savedBy: userId }],
+      createdAt: now, updatedAt: now, updatedBy: userId,
     };
-    await this.deploy(rt);
     await this.save(rt);
     return rt;
   }
 
-  /** Sửa loại đơn: deploy phiên bản mới. Đơn đã gửi vẫn chạy theo phiên bản cũ. */
+  /** Sửa loại đơn: thêm phiên bản mới. Đơn đã gửi vẫn giữ số phiên bản cũ nên vẫn hiện đúng form cũ. */
   async update(key: string, input: RequestTypeInput, userId: string) {
     const current = await this.get(key);
     const { name, fields } = this.check(input);
+    const now = new Date().toISOString();
+    const version = current.version + 1;
     const rt: RequestType = {
-      ...current,
-      name,
-      fields,
-      updatedAt: new Date().toISOString(),
-      updatedBy: userId,
+      ...current, name, fields, version,
+      versions: [...current.versions, { version, name, fields, savedAt: now, savedBy: userId }],
+      updatedAt: now, updatedBy: userId,
     };
-    await this.deploy(rt);
     await this.save(rt);
     return rt;
   }
@@ -115,40 +85,22 @@ export class RequestTypesService implements OnModuleInit {
     }
   }
 
-  /** Đóng gói BPMN + 2 form thành .bar và deploy. */
-  private async deploy(rt: RequestType) {
-    const zip = new JSZip();
-    zip.file(`${rt.key}.bpmn20.xml`, bpmn(rt));
-    zip.file(
-      `${startFormKey(rt.key)}.form`,
-      JSON.stringify(startForm(rt), null, 2),
-    );
-    zip.file(
-      `${approveFormKey(rt.key)}.form`,
-      JSON.stringify(approveForm(rt), null, 2),
-    );
-    const bytes = await zip.generateAsync({ type: 'uint8array' });
-    return this.flowable.deploy(`${rt.key}.bar`, bytes);
-  }
-
   private async save(rt: RequestType) {
-    await writeFile(
-      join(this.dir, `${rt.key}.json`),
-      JSON.stringify(rt, null, 2) + '\n',
-      'utf8',
-    );
+    await writeFile(join(this.dir, `${rt.key}.json`), JSON.stringify(rt, null, 2) + '\n', 'utf8');
   }
 
   private async readAll(): Promise<RequestType[]> {
-    const files = (await readdir(this.dir).catch(() => [] as string[])).filter(
-      (f) => f.endsWith('.json'),
-    );
+    const files = (await readdir(this.dir).catch(() => [] as string[])).filter((f) => f.endsWith('.json'));
     const types = await Promise.all(
       files.map(async (f) => {
         try {
-          return JSON.parse(
-            await readFile(join(this.dir, f), 'utf8'),
-          ) as RequestType;
+          const rt = JSON.parse(await readFile(join(this.dir, f), 'utf8')) as RequestType;
+          // File viết tay thiếu phiên bản thì bỏ qua, tránh làm hỏng cả danh sách
+          if (typeof rt?.key !== 'string' || !Array.isArray(rt.versions) || !rt.versions.length) {
+            this.log.warn(`Skipping invalid request type file ${f} (missing key or versions)`);
+            return null;
+          }
+          return rt;
         } catch {
           this.log.warn(`Skipping unreadable request type file ${f}`);
           return null;

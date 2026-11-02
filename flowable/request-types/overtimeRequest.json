@@ -1,0 +1,82 @@
+{
+  "key": "overtimeRequest",
+  "name": "Đơn đăng ký tăng ca",
+  "fields": [
+    {
+      "id": "employeeName",
+      "name": "Họ tên",
+      "type": "text",
+      "required": true
+    },
+    {
+      "id": "otDate",
+      "name": "Ngày tăng ca",
+      "type": "date",
+      "required": true
+    },
+    {
+      "id": "hours",
+      "name": "Số giờ",
+      "type": "integer",
+      "required": true
+    },
+    {
+      "id": "otType",
+      "name": "Loại tăng ca",
+      "type": "dropdown",
+      "required": true,
+      "options": ["Ngày thường", "Cuối tuần", "Ngày lễ"]
+    },
+    {
+      "id": "task",
+      "name": "Nội dung công việc",
+      "type": "multi-line-text",
+      "required": true
+    }
+  ],
+  "version": 1,
+  "versions": [
+    {
+      "version": 1,
+      "name": "Đơn đăng ký tăng ca",
+      "fields": [
+        {
+          "id": "employeeName",
+          "name": "Họ tên",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "otDate",
+          "name": "Ngày tăng ca",
+          "type": "date",
+          "required": true
+        },
+        {
+          "id": "hours",
+          "name": "Số giờ",
+          "type": "integer",
+          "required": true
+        },
+        {
+          "id": "otType",
+          "name": "Loại tăng ca",
+          "type": "dropdown",
+          "required": true,
+          "options": ["Ngày thường", "Cuối tuần", "Ngày lễ"]
+        },
+        {
+          "id": "task",
+          "name": "Nội dung công việc",
+          "type": "multi-line-text",
+          "required": true
+        }
+      ],
+      "savedAt": "2026-11-02T14:08:23.500Z",
+      "savedBy": "admin"
+    }
+  ],
+  "createdAt": "2026-11-02T14:08:23.500Z",
+  "updatedAt": "2026-11-02T14:08:23.500Z",
+  "updatedBy": "admin"
+}

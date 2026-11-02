@@ -1,0 +1,18 @@
+{
+  "key": "donMuaThietBi",
+  "name": "Đơn mua thiết bị",
+  "fields": [
+    {
+      "key": "tenThietBi",
+      "name": "Tên thiết bị",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "soTien",
+      "name": "Số tiền",
+      "type": "integer",
+      "required": true
+    }
+  ]
+}

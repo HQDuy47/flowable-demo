@@ -8,18 +8,18 @@ export const requestKeys = {
   startForm: (processId: string) => [...requestKeys.all, 'start-form', processId] as const,
 };
 
-/** Các loại đơn đang triển khai trên Flowable. */
+/** Các loại đơn admin đã tạo. */
 export function useProcesses() {
   return useQuery({ queryKey: requestKeys.processes(), queryFn: requestsApi.processes, staleTime: 5 * 60_000 });
 }
 
-/** Form bắt đầu của một loại đơn. Form gắn với bản triển khai nên không đổi, giữ trong cache. */
+/** Form lập đơn theo phiên bản mới nhất của loại đơn; admin có thể sửa nên không giữ mãi trong cache. */
 export function useStartForm(processId: string | undefined) {
   return useQuery({
     queryKey: requestKeys.startForm(processId ?? ''),
     queryFn: () => requestsApi.startForm(processId!),
     enabled: !!processId,
-    staleTime: Infinity,
+    staleTime: 5 * 60_000,
   });
 }
 

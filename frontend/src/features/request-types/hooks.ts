@@ -25,7 +25,7 @@ export function useSaveRequestType() {
     onSuccess: saved => {
       qc.setQueryData(requestTypeKeys.detail(saved.key), saved);
       qc.invalidateQueries({ queryKey: requestTypeKeys.list() });
-      qc.invalidateQueries({ queryKey: requestKeys.processes() });
+      qc.invalidateQueries({ queryKey: requestKeys.all }); // danh sách loại đơn + form lập đơn đã cache
     },
   });
 }

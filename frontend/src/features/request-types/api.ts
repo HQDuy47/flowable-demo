@@ -13,10 +13,10 @@ export type FieldType = (typeof FIELD_TYPES)[number]['id'];
 
 export type TypeField = { id: string; name: string; type: FieldType; required: boolean; options?: string[] };
 
-/** Bản thiết kế loại đơn. `version` là phiên bản đang chạy trên Flowable (null nếu chưa deploy). */
+/** Bản thiết kế loại đơn. `version` là phiên bản mới nhất (mỗi lần lưu tăng 1). */
 export type RequestType = {
   key: string; name: string; fields: TypeField[];
-  createdAt: string; updatedAt: string; updatedBy: string; version?: number | null;
+  createdAt: string; updatedAt: string; updatedBy: string; version: number;
 };
 
 /** Dữ liệu gửi lên khi lưu; trường mới chưa có id. */

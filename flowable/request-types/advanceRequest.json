@@ -1,0 +1,88 @@
+{
+  "key": "advanceRequest",
+  "name": "Đơn xin tạm ứng",
+  "fields": [
+    {
+      "id": "employeeName",
+      "name": "Họ tên",
+      "type": "text",
+      "required": true
+    },
+    {
+      "id": "amount",
+      "name": "Số tiền (VNĐ)",
+      "type": "integer",
+      "required": true
+    },
+    {
+      "id": "paymentMethod",
+      "name": "Hình thức nhận",
+      "type": "dropdown",
+      "required": true,
+      "options": [
+        "Tiền mặt",
+        "Chuyển khoản"
+      ]
+    },
+    {
+      "id": "settleDate",
+      "name": "Hạn hoàn ứng",
+      "type": "date",
+      "required": true
+    },
+    {
+      "id": "reason",
+      "name": "Lý do tạm ứng",
+      "type": "multi-line-text",
+      "required": true
+    }
+  ],
+  "version": 1,
+  "versions": [
+    {
+      "version": 1,
+      "name": "Đơn xin tạm ứng",
+      "fields": [
+        {
+          "id": "employeeName",
+          "name": "Họ tên",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "amount",
+          "name": "Số tiền (VNĐ)",
+          "type": "integer",
+          "required": true
+        },
+        {
+          "id": "paymentMethod",
+          "name": "Hình thức nhận",
+          "type": "dropdown",
+          "required": true,
+          "options": [
+            "Tiền mặt",
+            "Chuyển khoản"
+          ]
+        },
+        {
+          "id": "settleDate",
+          "name": "Hạn hoàn ứng",
+          "type": "date",
+          "required": true
+        },
+        {
+          "id": "reason",
+          "name": "Lý do tạm ứng",
+          "type": "multi-line-text",
+          "required": true
+        }
+      ],
+      "savedAt": "2026-11-02T14:08:23.500Z",
+      "savedBy": "admin"
+    }
+  ],
+  "createdAt": "2026-11-02T14:08:23.500Z",
+  "updatedAt": "2026-11-02T14:08:23.500Z",
+  "updatedBy": "admin"
+}

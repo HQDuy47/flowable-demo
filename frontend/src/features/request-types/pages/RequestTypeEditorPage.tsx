@@ -54,7 +54,7 @@ function Editor({ saved }: { saved?: RequestType }) {
     save.mutate({ key: saved?.key, input }, {
       // lưu xong về danh sách
       onSuccess: rt => {
-        toast.success(`Deployed ${rt.name}`, { description: 'Employees can now pick it in New request. Requests already submitted keep the form they were sent with.' });
+        toast.success(`Saved ${rt.name} (v${rt.version})`, { description: 'Employees can now pick it in New request. Requests already submitted keep the form they were sent with.' });
         navigate('/request-types', { replace: true });
       },
       onError: err => toast.error('The request type was not saved.', { description: errorMessage(err) }),
@@ -66,11 +66,11 @@ function Editor({ saved }: { saved?: RequestType }) {
       <RecordHeader
         title={saved ? saved.name : 'New request type'}
         fields={saved
-          ? [{ label: 'Process key', value: <span className="mono">{saved.key}</span> }, { label: 'Version', value: version ? `v${version}` : '...' }]
+          ? [{ label: 'Key', value: <span className="mono">{saved.key}</span> }, { label: 'Version', value: version ? `v${version}` : '...' }]
           : [{ label: 'Approver', value: 'Department manager' }]}
         actions={<>
           <Cmd icon="back" label="Back" to="/request-types" />
-          <Cmd icon="save" label={saved ? 'Save new version' : 'Save and deploy'} primary busy={save.isPending} disabled={!dirty} onClick={submit} />
+          <Cmd icon="save" label={saved ? 'Save new version' : 'Create'} primary busy={save.isPending} disabled={!dirty} onClick={submit} />
         </>}
       />
       <div className="body">
@@ -100,9 +100,9 @@ function Editor({ saved }: { saved?: RequestType }) {
             </ol>
           </Section>
           {saved && (
-            <Section title="Deployment">
+            <Section title="Versions">
               <KeyValues rows={[
-                { label: 'Version', value: version ? `v${version}` : <span className="muted">Not deployed</span> },
+                { label: 'Current version', value: version ? `v${version}` : '...' },
                 { label: 'Fields', value: saved.fields.length },
                 { label: 'Created', value: <When at={saved.createdAt} /> },
                 { label: 'Updated', value: <When at={saved.updatedAt} /> },

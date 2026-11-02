@@ -4,7 +4,7 @@ Demo quy trình đơn từ (lập đơn → trưởng phòng duyệt) chạy tr�
 
 | Thư mục | Vai trò | Cổng |
 |---|---|---|
-| `flowable/` | BPMN + form (.form) mẫu, script deploy, loại đơn thiết kế từ UI (`request-types/*.json`) | Flowable REST: 8081 |
+| `flowable/` | loại đơn (`request-types/*.json`, mỗi file giữ mọi phiên bản) | Flowable REST: 8081 |
 | `backend/` | NestJS BFF, gọi Flowable REST, gộp dữ liệu cho UI | 3000 |
 | `frontend/` | React 19 + Vite admin UI | 5173 (proxy `/api` → 3000) |
 
@@ -13,14 +13,17 @@ Người dùng nói tiếng Việt: trả lời bằng tiếng Việt. Comment t
 ## Chạy
 
 ```powershell
-docker compose up -d                        # flowable/flowable-rest:7.1.0, DB trong bộ nhớ
-powershell flowable/deploy.ps1              # deploy leaveRequest (cần chạy lại sau mỗi lần restart container)
+docker compose up -d                        # flowable/flowable-rest:7.1.0 + PostgreSQL 16 (volume flowable-db-data)
 cd backend;  npm run start:dev              # watch mode, người dùng thường đã bật sẵn
 cd frontend; npm run dev
 ```
 
 - `backend/.env`: `FLOWABLE_URL`, `FLOWABLE_USER=rest-admin`, `FLOWABLE_PASSWORD=test`.
-- Flowable mất hết dữ liệu khi restart. Loại đơn trong `flowable/request-types/` được backend tự deploy lại lúc khởi động (`RequestTypesService.onModuleInit`). Các process mẫu khác (businessTripRequest, advanceRequest, overtimeRequest) đang có trên Flowable nhưng không có file trong repo.
+- Dữ liệu Flowable nằm trong PostgreSQL (container `flowable-db`, user/pass/db đều là `flowable`, host port 5433), restart không mất. `docker compose down -v` mới xoá sạch.
+- **Một quy trình chung cho mọi loại đơn**: BPMN `requestApproval` (hằng `GENERIC_BPMN` trong `backend/src/request-types.ts`: start → userTask "Manager approval" giao `checker` → gateway `decision`). `FlowableService.ensureProcess` deploy lúc khởi động nếu Flowable chưa có hoặc nội dung khác `GENERIC_BPMN` (sửa BPMN trong code là tự lên phiên bản mới). Không có file BPMN / `.form` nào, không deploy theo loại đơn.
+- **Form gắn qua `formKey` dạng biểu thức**: userTask có `flowable:formKey="${requestType}:${requestTypeVersion}:approve"`, Flowable tính lúc tạo task → vd. `leaveRequest:1:approve`. Backend tra form bằng `RequestTypesService.formByKey` (`formKeyOf` / `parseFormKey`). `startEvent` không có formKey (chưa có biến lúc hiện form lập đơn); form lập đơn có key `<loại>:<phiên bản>:start`.
+- Loại đơn là dữ liệu: `flowable/request-types/<key>.json` (`key`, `name`, `fields`, `version` mới nhất, `versions[]`). 4 loại mẫu: leaveRequest, businessTripRequest, advanceRequest, overtimeRequest.
+- Mỗi đơn mang biến `requestType`, `requestTypeVersion`, `requestTypeName` (`TYPE_VARS`). Form lập đơn và form duyệt được dựng lúc chạy từ đúng phiên bản đó (`startForm`, `approveForm`), nên đơn cũ luôn hiện form lúc gửi. Id trường không được trùng các biến này (`RESERVED`).
 - Kiểm tra: `cd frontend; npx tsc -b; npx vite build`. Backend: `npm run build`.
 
 ## Người dùng và vai trò
@@ -40,7 +43,7 @@ Mỗi mục menu gắn một vai trò (`frontend/src/app/layout/nav.ts`). `AppLa
 Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 
 ### 1. New request (`#/new/:processId?`, vai trò `maker`)
-1. `GET /api/processes` trả về các loại đơn có start form. Không có `processId` thì chuyển sang loại đầu tiên.
+1. `GET /api/processes` trả về các loại đơn (id = key loại đơn), xếp theo tên. Không có `processId` thì chuyển sang loại đầu tiên.
 2. Chọn loại đơn bằng các nút pill (`ProcessPicker`). `GET /api/processes/:id/start-form` tải form. `employeeName` được điền sẵn.
 3. Form được vẽ động bằng `shared/form` (`useDynamicForm` + `Fields`), kiểm tra các trường bắt buộc.
 4. Nút **Submit for approval** (hàng tiêu đề, bên phải) gọi `POST /api/processes/:key/start`. Thành công thì hiện toast kèm mã đơn, form được làm trống, hàng chờ duyệt được tải lại.
@@ -54,7 +57,7 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 4. Xong thì hiện toast rồi quay về `#/approvals`.
 
 ### 3. Request types (`#/request-types`, `#/request-types/new`, `#/request-types/:key`, vai trò `admin`)
-1. Danh sách loại đơn (`GET /api/request-types`): tên, process key, số trường, phiên bản trên Flowable.
+1. Danh sách loại đơn (`GET /api/request-types`): tên, key, số trường, phiên bản.
 2. Trang thiết kế có các phần:
    - **Details**: tên loại đơn;
    - **Fields**: nhãn, kiểu (text, multi-line-text, integer, date, dropdown, boolean), ô bắt buộc, lựa chọn của dropdown, đổi thứ tự, xoá;
@@ -62,9 +65,8 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
    - **Workflow**: cố định một bước trưởng phòng duyệt.
 3. Lưu bằng `POST /api/request-types` (tạo mới) hoặc `PUT /api/request-types/:key` (phiên bản mới). Backend (`backend/src/request-types*.ts`) làm các bước sau:
    - chuẩn hoá và kiểm tra dữ liệu; sinh id trường camelCase không dấu; giữ id cũ khi sửa;
-   - sinh `<key>Start.form`, `<key>Approve.form` và BPMN "start → userTask Manager approval → gateway `decision`";
-   - nén thành .bar bằng JSZip, deploy qua `/repository/deployments`, ghi file `flowable/request-types/<key>.json`.
-4. Loại đơn mới xuất hiện ngay trong New request. Đơn đã gửi vẫn chạy theo phiên bản cũ. Chưa có chức năng xoá: muốn xoá thì gọi Flowable `DELETE /repository/deployments/:id?cascade=true` và xoá file JSON.
+   - thêm một phiên bản vào `versions[]` và ghi file `flowable/request-types/<key>.json`. Không gọi Flowable.
+4. Loại đơn mới xuất hiện ngay trong New request. Đơn đã gửi vẫn hiện form của phiên bản lúc gửi. Chưa có chức năng xoá: xoá file JSON thì đơn đã gửi của loại đó không mở được form duyệt nữa.
 
 ## Backend API (`/api`)
 
@@ -72,16 +74,16 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 |---|---|---|
 | GET | `users` | người dùng demo |
 | POST | `login` | `{ username, password }`, 401 nếu sai |
-| GET | `processes` | loại đơn có start form |
-| GET | `processes/:id/start-form` | form model (.form) |
-| POST | `processes/:key/start` | `{ values }`, header `x-user-id` |
+| GET | `processes` | loại đơn (id = key) |
+| GET | `processes/:key/start-form` | form lập đơn của phiên bản mới nhất |
+| POST | `processes/:key/start` | `{ values }`, header `x-user-id`; start `requestApproval` kèm loại đơn + phiên bản |
 | GET | `requests/:id` | chi tiết đơn + timeline |
 | GET | `tasks`, `tasks/done` | việc chờ / đã xử lý của người trong header |
 | GET | `tasks/:id/form` | form duyệt kèm giá trị |
 | POST | `tasks/:id/complete` | `{ outcome, values }` |
 | GET/POST/PUT | `request-types[/:key]` | chỉ admin (403 nếu không phải admin) |
 
-Image Flowable REST không có form engine. Backend tự đọc tài nguyên `.form` trong deployment theo `formKey` (`FlowableService.loadForm`).
+Flowable chỉ điều phối (task, giao việc, rẽ nhánh), không biết gì về form. Form do backend dựng từ loại đơn, cùng hình dạng form model của Flowable nên frontend (`shared/form`) không đổi.
 
 ## Cấu trúc frontend (feature-based)
 

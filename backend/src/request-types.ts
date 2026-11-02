@@ -1,7 +1,7 @@
 /**
- * Loại đơn thiết kế từ giao diện: từ một bản thiết kế (tên + danh sách trường) sinh ra
- * form lập đơn, form duyệt và quy trình BPMN "lập đơn → trưởng phòng duyệt → kết thúc".
- * Toàn bộ là hàm thuần, không gọi Flowable.
+ * Loại đơn thiết kế từ giao diện. Mọi loại đơn chạy chung MỘT quy trình BPMN (GENERIC_PROCESS_KEY);
+ * loại đơn chỉ là dữ liệu cấu hình (tên + danh sách trường, có phiên bản), form lập đơn / form duyệt
+ * được dựng từ đó lúc chạy. Toàn bộ là hàm thuần, không gọi Flowable.
  */
 
 export const FIELD_TYPES = ['text', 'multi-line-text', 'integer', 'date', 'dropdown', 'boolean'] as const;
@@ -15,11 +15,22 @@ export interface TypeField {
   options?: string[];
 }
 
-/** Bản thiết kế được lưu thành file JSON. */
+/** Một phiên bản của loại đơn. Đơn đã gửi ghi lại số phiên bản nên luôn đọc đúng form lúc gửi. */
+export interface TypeVersion {
+  version: number;
+  name: string;
+  fields: TypeField[];
+  savedAt: string;
+  savedBy: string;
+}
+
+/** Bản thiết kế được lưu thành file JSON. name/fields/version ở ngoài là của phiên bản mới nhất. */
 export interface RequestType {
   key: string;
   name: string;
   fields: TypeField[];
+  version: number;
+  versions: TypeVersion[];
   createdAt: string;
   updatedAt: string;
   updatedBy: string;
@@ -31,11 +42,17 @@ export interface RequestTypeInput {
   fields: Array<{ id?: string; name: string; type: string; required?: boolean; options?: string[] }>;
 }
 
-/** Người duyệt của mọi loại đơn thiết kế từ giao diện (khớp users.ts). */
+/** Người duyệt của mọi loại đơn (khớp users.ts). */
 export const APPROVER = 'checker';
 
+/** Quy trình chung cho mọi loại đơn. */
+export const GENERIC_PROCESS_KEY = 'requestApproval';
+
+/** Biến của process cho biết đơn thuộc loại nào, phiên bản nào. */
+export const TYPE_VARS = { key: 'requestType', version: 'requestTypeVersion', name: 'requestTypeName' } as const;
+
 /** Tên biến đã dùng trong quy trình hoặc backend; trường của người dùng không được trùng. */
-const RESERVED = new Set(['initiator', 'decision', 'managerComment', '_submission']);
+const RESERVED = new Set(['initiator', 'decision', 'managerComment', '_submission', ...Object.values(TYPE_VARS)]);
 
 /** "Đơn mua thiết bị" → ["don", "mua", "thiet", "bi"] (bỏ dấu, chỉ giữ chữ và số). */
 function words(s: string): string[] {
@@ -58,8 +75,8 @@ function unique(base: string, taken: Set<string>): string {
   return id;
 }
 
-/** Khoá quy trình từ tên loại đơn: "Đơn mua thiết bị" → "reqDonMuaThietBi". */
-export function processKeyFor(name: string, taken: Set<string>): string {
+/** Khoá loại đơn từ tên: "Đơn mua thiết bị" → "reqDonMuaThietBi". */
+export function typeKeyFor(name: string, taken: Set<string>): string {
   const body = words(name).map(capital).join('').slice(0, 40) || 'Request';
   return unique(`req${body}`, taken);
 }
@@ -105,15 +122,23 @@ export function normalize(input: RequestTypeInput): { name: string; fields: Type
   return { name, fields };
 }
 
-export const startFormKey = (key: string) => `${key}Start`;
-export const approveFormKey = (key: string) => `${key}Approve`;
+export type FormKind = 'start' | 'approve';
 
-/** Form lập đơn (định dạng .form của Flowable). */
-export function startForm(rt: RequestType) {
+/** formKey của một form: "<loại đơn>:<phiên bản>:<start|approve>", vd. "leaveRequest:1:approve". */
+export const formKeyOf = (key: string, version: number, kind: FormKind) => `${key}:${version}:${kind}`;
+
+/** Tách formKey (vd. lấy từ task Flowable). Sai định dạng thì trả null. */
+export function parseFormKey(formKey: unknown): { key: string; version: number; kind: FormKind } | null {
+  const m = typeof formKey === 'string' ? /^([A-Za-z0-9_]+):(\d+):(start|approve)$/.exec(formKey) : null;
+  return m ? { key: m[1], version: Number(m[2]), kind: m[3] as FormKind } : null;
+}
+
+/** Form lập đơn (cùng hình dạng form model của Flowable mà frontend đang vẽ). */
+export function startForm(key: string, v: TypeVersion) {
   return {
-    key: startFormKey(rt.key),
-    name: rt.name,
-    fields: rt.fields.map((f) => ({
+    key: formKeyOf(key, v.version, 'start'),
+    name: v.name,
+    fields: v.fields.map((f) => ({
       fieldType: f.type === 'dropdown' ? 'OptionFormField' : 'FormField',
       id: f.id,
       name: f.name,
@@ -125,12 +150,12 @@ export function startForm(rt: RequestType) {
 }
 
 /** Form duyệt: nhắc lại các trường ở dạng chỉ đọc, thêm ô ý kiến và hai kết quả. */
-export function approveForm(rt: RequestType) {
+export function approveForm(key: string, v: TypeVersion) {
   return {
-    key: approveFormKey(rt.key),
-    name: `Approve: ${rt.name}`,
+    key: formKeyOf(key, v.version, 'approve'),
+    name: `Approve: ${v.name}`,
     fields: [
-      ...rt.fields.map((f) => ({ fieldType: 'FormField', id: f.id, name: f.name, type: 'text', readOnly: true })),
+      ...v.fields.map((f) => ({ fieldType: 'FormField', id: f.id, name: f.name, type: 'text', readOnly: true })),
       { fieldType: 'FormField', id: 'managerComment', name: 'Manager comment', type: 'multi-line-text' },
     ],
     outcomes: [
@@ -140,20 +165,22 @@ export function approveForm(rt: RequestType) {
   };
 }
 
-const xml = (s: string) => s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]!);
-
-/** Quy trình: lập đơn → trưởng phòng duyệt → rẽ nhánh theo biến "decision". */
-export function bpmn(rt: RequestType): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
+/**
+ * Quy trình chung: lập đơn → trưởng phòng duyệt → rẽ nhánh theo biến "decision".
+ * formKey của user task là biểu thức, Flowable tính lúc tạo task từ biến của đơn
+ * → "leaveRequest:1:approve"; backend tra form theo chuỗi đó (RequestTypesService.formByKey).
+ * startEvent không gắn formKey: form lập đơn hiện trước khi có biến, nên chọn theo loại đơn người dùng bấm.
+ */
+export const GENERIC_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
              xmlns:flowable="http://flowable.org/bpmn"
              targetNamespace="http://seatech.demo/request-types">
-  <process id="${rt.key}" name="${xml(rt.name)}" isExecutable="true">
-    <startEvent id="start" flowable:formKey="${startFormKey(rt.key)}" />
+  <process id="${GENERIC_PROCESS_KEY}" name="Request approval" isExecutable="true">
+    <startEvent id="start" />
     <sequenceFlow id="f1" sourceRef="start" targetRef="managerApprove" />
-    <userTask id="managerApprove" name="Manager approval"
-              flowable:assignee="${APPROVER}" flowable:formKey="${approveFormKey(rt.key)}" />
+    <userTask id="managerApprove" name="Manager approval" flowable:assignee="${APPROVER}"
+              flowable:formKey="\${${TYPE_VARS.key}}:\${${TYPE_VARS.version}}:approve" />
     <sequenceFlow id="f2" sourceRef="managerApprove" targetRef="gw" />
     <exclusiveGateway id="gw" />
     <sequenceFlow id="f3" sourceRef="gw" targetRef="approvedEnd">
@@ -167,4 +194,3 @@ export function bpmn(rt: RequestType): string {
   </process>
 </definitions>
 `;
-}

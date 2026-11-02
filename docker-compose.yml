@@ -1,5 +1,40 @@
 services:
+  # PostgreSQL lưu dữ liệu Flowable vào volume, restart không mất
+  flowable-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: flowable
+      POSTGRES_USER: flowable
+      POSTGRES_PASSWORD: flowable
+    ports:
+      - "5433:5432"   # mở ra host để xem bằng DBeaver/psql; 5433 tránh đụng Postgres cài sẵn
+    volumes:
+      - flowable-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowable -d flowable"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   flowable:
     image: flowable/flowable-rest:7.1.0
+    depends_on:
+      flowable-db:
+        condition: service_healthy
+    environment:
+      # Image đã có sẵn driver postgresql; Flowable tự tạo bảng ACT_*/FLW_* lần đầu
+      SPRING_DATASOURCE_DRIVER-CLASS-NAME: org.postgresql.Driver
+      SPRING_DATASOURCE_URL: jdbc:postgresql://flowable-db:5432/flowable
+      SPRING_DATASOURCE_USERNAME: flowable
+      SPRING_DATASOURCE_PASSWORD: flowable
+      FLOWABLE_REST_APP_ADMIN_USER-ID: rest-admin
+      FLOWABLE_REST_APP_ADMIN_PASSWORD: test
+      # Không tự deploy "Demo processes" (Helpdesk, VacationRequest...) mỗi lần khởi động
+      FLOWABLE_REST_APP_CREATE-DEMO-DEFINITIONS: "false"
     ports:
       - "8081:8080"   # host 8080 đang bị AgentService chiếm → dùng 8081
+    restart: unless-stopped
+
+volumes:
+  flowable-db-data:

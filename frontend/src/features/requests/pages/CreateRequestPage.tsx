@@ -20,8 +20,8 @@ export default function CreateRequestPage() {
   if (processes.data.length === 0)
     return (
       <div className="pad">
-        <Empty title="No process with a start form is deployed yet.">
-          <p>Run <code>flowable/deploy.ps1</code> to deploy the processes, then reload the page.</p>
+        <Empty title="No request type yet.">
+          <p>Ask an administrator to create one in Request types, then reload the page.</p>
         </Empty>
       </div>
     );
