@@ -1,20 +1,43 @@
-import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { AxiosError, AxiosRequestConfig } from 'axios';
 import { findUser, userRef } from './users.js';
 import { RequestTypesService } from './request-types.service.js';
-import { GENERIC_BPMN, GENERIC_PROCESS_KEY, startForm, TYPE_VARS, type TypeVersion } from './request-types.js';
+import {
+  GENERIC_BPMN,
+  GENERIC_PROCESS_KEY,
+  startForm,
+  toJsonSchema,
+  TYPE_VARS,
+  type TypeVersion,
+} from './request-types.js';
 
 /** Form trả về cho React — cùng hình dạng với form model của Flowable. */
 export interface FormModel {
   key: string;
   name: string;
-  fields: Array<{ id: string; name: string; type: string; value?: unknown; readOnly?: boolean; [k: string]: unknown }>;
+  fields: Array<{
+    id: string;
+    name: string;
+    type: string;
+    value?: unknown;
+    readOnly?: boolean;
+    [k: string]: unknown;
+  }>;
   outcomes?: Array<{ id: string; name: string }>;
 }
 
-export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'done';
+export type RequestStatus =
+  'pending' | 'approved' | 'rejected' | 'cancelled' | 'done';
 
 type Vars = Record<string, any>;
 const toMap = (vars?: Array<{ name: string; value: unknown }>): Vars =>
@@ -23,10 +46,13 @@ const toMap = (vars?: Array<{ name: string; value: unknown }>): Vars =>
 /** Người gửi đơn: biến "initiator"; đơn không có biến này thì lấy họ tên điền trong form. */
 const sender = (vars: Vars) =>
   userRef(vars.initiator) ??
-  (typeof vars.employeeName === 'string' && vars.employeeName ? { id: '', name: vars.employeeName, title: '' } : null);
+  (typeof vars.employeeName === 'string' && vars.employeeName
+    ? { id: '', name: vars.employeeName, title: '' }
+    : null);
 
 /** Tên loại đơn lưu trong biến lúc gửi; đơn cũ (trước khi dùng quy trình chung) thì lấy tên process. */
-const typeName = (vars: Vars, fallback?: string) => vars[TYPE_VARS.name] ?? fallback ?? 'Request';
+const typeName = (vars: Vars, fallback?: string) =>
+  vars[TYPE_VARS.name] ?? fallback ?? 'Request';
 
 /** Biến task-local lưu những gì người duyệt gửi ở bước đó → hiện lại trong lịch sử đơn. */
 const SUBMISSION = '_submission';
@@ -44,22 +70,43 @@ export class FlowableService implements OnModuleInit {
 
   async onModuleInit() {
     // Flowable chưa chạy thì bỏ qua, lần gửi đơn đầu tiên sẽ thử lại
-    await this.ensureProcess().catch((e) => this.log.warn(`Could not deploy ${GENERIC_PROCESS_KEY}: ${(e as Error).message}`));
+    await this.ensureProcess().catch((e) =>
+      this.log.warn(
+        `Could not deploy ${GENERIC_PROCESS_KEY}: ${(e as Error).message}`,
+      ),
+    );
   }
 
   /** Deploy quy trình chung nếu Flowable chưa có, hoặc bản đang chạy khác GENERIC_BPMN (vừa sửa BPMN trong code). */
   private ensureProcess() {
     this.ready ??= (async () => {
-      const def = (await this.call('get', `/repository/process-definitions?key=${GENERIC_PROCESS_KEY}&latest=true`)).data[0];
+      const def = (
+        await this.call(
+          'get',
+          `/repository/process-definitions?key=${GENERIC_PROCESS_KEY}&latest=true`,
+        )
+      ).data[0];
       if (def) {
-        const resource = encodeURIComponent(def.resource.split('/resources/').pop());
-        const xml = await this.call('get', `/repository/deployments/${def.deploymentId}/resourcedata/${resource}`, undefined, {
-          responseType: 'text', transformResponse: (d) => d,
-        });
+        const resource = encodeURIComponent(
+          def.resource.split('/resources/').pop(),
+        );
+        const xml = await this.call(
+          'get',
+          `/repository/deployments/${def.deploymentId}/resourcedata/${resource}`,
+          undefined,
+          {
+            responseType: 'text',
+            transformResponse: (d) => d,
+          },
+        );
         if (xml === GENERIC_BPMN) return;
       }
       const body = new FormData();
-      body.append('file', new Blob([GENERIC_BPMN], { type: 'text/xml' }), `${GENERIC_PROCESS_KEY}.bpmn20.xml`);
+      body.append(
+        'file',
+        new Blob([GENERIC_BPMN], { type: 'text/xml' }),
+        `${GENERIC_PROCESS_KEY}.bpmn20.xml`,
+      );
       await this.call('post', '/repository/deployments', body);
       this.log.log(`Deployed ${GENERIC_PROCESS_KEY}`);
     })().catch((e) => {
@@ -69,13 +116,23 @@ export class FlowableService implements OnModuleInit {
     return this.ready;
   }
 
-  private async call(method: 'get' | 'post' | 'delete', url: string, data?: any, config?: AxiosRequestConfig) {
+  private async call(
+    method: 'get' | 'post' | 'delete',
+    url: string,
+    data?: any,
+    config?: AxiosRequestConfig,
+  ) {
     try {
-      const res = await firstValueFrom(this.http.request({ method, url, data, ...config }));
+      const res = await firstValueFrom(
+        this.http.request({ method, url, data, ...config }),
+      );
       return res.data;
     } catch (e) {
       const err = e as AxiosError<any>;
-      throw new HttpException(err.response?.data ?? err.message, err.response?.status ?? 500);
+      throw new HttpException(
+        err.response?.data ?? err.message,
+        err.response?.status ?? 500,
+      );
     }
   }
 
@@ -107,7 +164,11 @@ export class FlowableService implements OnModuleInit {
       endTime: p.endTime,
       status: this.status(p, vars),
       currentTask: currentTask
-        ? { id: currentTask.id, name: currentTask.name, assignee: userRef(currentTask.assignee) }
+        ? {
+            id: currentTask.id,
+            name: currentTask.name,
+            assignee: userRef(currentTask.assignee),
+          }
         : null,
     };
   }
@@ -120,9 +181,17 @@ export class FlowableService implements OnModuleInit {
         ? JSON.parse(local[SUBMISSION])
         : { values: processVars, outcome: processVars.decision };
     return {
-      outcome: sub.outcome ? (form?.outcomes?.find((o) => o.id === sub.outcome) ?? { id: sub.outcome, name: sub.outcome }) : null,
+      outcome: sub.outcome
+        ? (form?.outcomes?.find((o) => o.id === sub.outcome) ?? {
+            id: sub.outcome,
+            name: sub.outcome,
+          })
+        : null,
       notes: (form?.fields ?? [])
-        .filter((f) => !f.readOnly && sub.values[f.id] != null && sub.values[f.id] !== '')
+        .filter(
+          (f) =>
+            !f.readOnly && sub.values[f.id] != null && sub.values[f.id] !== '',
+        )
         .map((f) => ({ label: f.name, value: sub.values[f.id] })),
     };
   }
@@ -138,12 +207,14 @@ export class FlowableService implements OnModuleInit {
   /** Form lập đơn theo phiên bản mới nhất của loại đơn. */
   async getStartForm(key: string) {
     const rt = await this.types.get(key);
-    return startForm(rt.key, rt.versions.at(-1)!);
+    const form = startForm(rt.key, rt.versions.at(-1)!);
+    return { key: form.key, name: form.name, ...toJsonSchema(form) };
   }
 
   /** Gửi đơn: chạy quy trình chung, ghi kèm loại đơn + phiên bản để sau này dựng lại đúng form. */
   async startProcess(key: string, values: Record<string, any>, userId: string) {
-    if (!findUser(userId)) throw new BadRequestException(`User "${userId}" does not exist`);
+    if (!findUser(userId))
+      throw new BadRequestException(`User "${userId}" does not exist`);
     const rt = await this.types.get(key);
     await this.ensureProcess();
     const res = await this.call('post', '/runtime/process-instances', {
@@ -162,9 +233,16 @@ export class FlowableService implements OnModuleInit {
   /** Chi tiết đơn: thông tin đã điền (kèm nhãn từ form lúc gửi) + các bước duyệt. */
   async getRequest(id: string) {
     const [hist, tasks] = await Promise.all([
-      this.call('post', '/query/historic-process-instances', { processInstanceId: id, includeProcessVariables: true }),
+      this.call('post', '/query/historic-process-instances', {
+        processInstanceId: id,
+        includeProcessVariables: true,
+      }),
       this.call('post', '/query/historic-task-instances', {
-        processInstanceId: id, includeTaskLocalVariables: true, sort: 'startTime', order: 'asc', size: 100,
+        processInstanceId: id,
+        includeTaskLocalVariables: true,
+        sort: 'startTime',
+        order: 'asc',
+        size: 100,
       }),
     ]);
     const p = hist.data[0];
@@ -188,8 +266,17 @@ export class FlowableService implements OnModuleInit {
     );
 
     return {
-      ...this.summary(p, vars, tasks.data.find((t: any) => !t.endTime)),
-      fields: (tv?.fields ?? []).map((f) => ({ id: f.id, label: f.name, type: f.type, value: vars[f.id] ?? null })),
+      ...this.summary(
+        p,
+        vars,
+        tasks.data.find((t: any) => !t.endTime),
+      ),
+      fields: (tv?.fields ?? []).map((f) => ({
+        id: f.id,
+        label: f.name,
+        type: f.type,
+        value: vars[f.id] ?? null,
+      })),
       steps,
     };
   }
@@ -197,7 +284,11 @@ export class FlowableService implements OnModuleInit {
   /** Việc đang chờ user xử lý, kèm thông tin đơn. */
   async listTasks(assignee: string) {
     const res = await this.call('post', '/query/tasks', {
-      assignee, includeProcessVariables: true, sort: 'createTime', order: 'desc', size: 200,
+      assignee,
+      includeProcessVariables: true,
+      sort: 'createTime',
+      order: 'desc',
+      size: 200,
     });
     return res.data.map((t: any) => {
       const vars = toMap(t.variables);
@@ -205,7 +296,11 @@ export class FlowableService implements OnModuleInit {
         id: t.id,
         name: t.name,
         time: t.createTime,
-        request: { id: t.processInstanceId, processName: typeName(vars), initiator: sender(vars) },
+        request: {
+          id: t.processInstanceId,
+          processName: typeName(vars),
+          initiator: sender(vars),
+        },
       };
     });
   }
@@ -213,21 +308,36 @@ export class FlowableService implements OnModuleInit {
   /** Việc user đã xử lý xong (bỏ qua task bị huỷ do người tạo rút đơn). */
   async listDoneTasks(assignee: string) {
     const res = await this.call('post', '/query/historic-task-instances', {
-      taskAssignee: assignee, finished: true, includeTaskLocalVariables: true, includeProcessVariables: true,
-      sort: 'endTime', order: 'desc', size: 200,
+      taskAssignee: assignee,
+      finished: true,
+      includeTaskLocalVariables: true,
+      includeProcessVariables: true,
+      sort: 'endTime',
+      order: 'desc',
+      size: 200,
     });
     return Promise.all(
       res.data
         .filter((t: any) => !t.deleteReason)
         .map(async (t: any) => {
-          const processVars = toMap(t.variables?.filter((v: any) => v.scope !== 'local'));
-          const { outcome } = this.submissionOf(t, await this.types.formByKey(t.formKey), processVars);
+          const processVars = toMap(
+            t.variables?.filter((v: any) => v.scope !== 'local'),
+          );
+          const { outcome } = this.submissionOf(
+            t,
+            await this.types.formByKey(t.formKey),
+            processVars,
+          );
           return {
             id: t.id,
             name: t.name,
             time: t.endTime,
             outcome,
-            request: { id: t.processInstanceId, processName: typeName(processVars), initiator: sender(processVars) },
+            request: {
+              id: t.processInstanceId,
+              processName: typeName(processVars),
+              initiator: sender(processVars),
+            },
           };
         }),
     );
@@ -235,25 +345,53 @@ export class FlowableService implements OnModuleInit {
 
   /** Form duyệt tra theo formKey của task (Flowable đã tính sẵn, vd. "leaveRequest:1:approve"), điền sẵn giá trị đơn. */
   async getTaskForm(taskId: string) {
-    const task = await this.call('get', `/runtime/tasks/${encodeURIComponent(taskId)}`);
+    const task = await this.call(
+      'get',
+      `/runtime/tasks/${encodeURIComponent(taskId)}`,
+    );
     const form: FormModel | null = await this.types.formByKey(task.formKey);
-    if (!form) throw new NotFoundException(`Form "${task.formKey ?? ''}" of task ${taskId} was not found`);
-    const vars = toMap(await this.call('get', `/runtime/process-instances/${task.processInstanceId}/variables`));
+    if (!form)
+      throw new NotFoundException(
+        `Form "${task.formKey ?? ''}" of task ${taskId} was not found`,
+      );
+    const vars = toMap(
+      await this.call(
+        'get',
+        `/runtime/process-instances/${task.processInstanceId}/variables`,
+      ),
+    );
     // field id trùng tên biến → điền sẵn giá trị (các ô readOnly ở form duyệt)
-    for (const f of form.fields) if (f.id in vars) f.value = vars[f.id];
-    return form;
+    const formData = Object.fromEntries(form.fields.filter((f) => f.id in vars).map((f) => [f.id, vars[f.id]]));
+    return { key: form.key, name: form.name, outcomes: form.outcomes ?? [], formData, ...toJsonSchema(form) };
   }
 
-  async completeTask(taskId: string, values: Record<string, any>, outcome: string | undefined, userId: string) {
-    const task = await this.call('get', `/runtime/tasks/${encodeURIComponent(taskId)}`);
-    if (task.assignee !== userId) throw new ForbiddenException('This task is not assigned to you');
+  async completeTask(
+    taskId: string,
+    values: Record<string, any>,
+    outcome: string | undefined,
+    userId: string,
+  ) {
+    const task = await this.call(
+      'get',
+      `/runtime/tasks/${encodeURIComponent(taskId)}`,
+    );
+    if (task.assignee !== userId)
+      throw new ForbiddenException('This task is not assigned to you');
     // Lưu riêng vào task (tên khác field form để không "che" biến process cùng tên)
     await this.call('post', `/runtime/tasks/${taskId}/variables`, [
-      { name: SUBMISSION, type: 'string', scope: 'local', value: JSON.stringify({ values, outcome }) },
+      {
+        name: SUBMISSION,
+        type: 'string',
+        scope: 'local',
+        value: JSON.stringify({ values, outcome }),
+      },
     ]);
     const variables = this.toVariables(values);
     if (outcome) variables.push({ name: 'decision', value: outcome }); // gateway đọc biến này
-    await this.call('post', `/runtime/tasks/${taskId}`, { action: 'complete', variables });
+    await this.call('post', `/runtime/tasks/${taskId}`, {
+      action: 'complete',
+      variables,
+    });
     return { ok: true };
   }
 }

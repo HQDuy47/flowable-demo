@@ -1,13 +1,14 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useDynamicForm, type FormModel } from '@/shared/form';
+import { SchemaForm, type FormValues, type SchemaFormRef } from '@/shared/form';
 import { code, errorMessage } from '@/shared/lib/format';
 import { Cmd, CommandBar, Empty, KeyValues, Problem, RecordHeader, Section, Skeleton, Tabs, When } from '@/shared/ui';
 import { outcomeAction, STATUS_LABEL, StatusBadge } from '../components/badges';
 import { DecisionDialog } from '../components/DecisionDialog';
 import { HistoryTable, RequestFields, Timeline } from '../components/RequestInfo';
 import { useCompleteTask, useRequestDetail, useTaskForm, useTasks } from '../hooks';
+import type { TaskForm } from '../api';
 import type { RequestDetail, Task } from '../types';
 
 /** Trang duyệt một đơn: thông tin đơn, dòng thời gian, nút Duyệt / Từ chối. */
@@ -37,24 +38,27 @@ export default function ApprovalDetailPage() {
   return <Decide key={task.id} task={task} request={request.data} form={form.data} />;
 }
 
-function Decide({ task, request: r, form }: { task: Task; request: RequestDetail; form: FormModel }) {
+function Decide({ task, request: r, form }: { task: Task; request: RequestDetail; form: TaskForm }) {
   const navigate = useNavigate();
   const complete = useCompleteTask();
-  // Từ chối thì bắt buộc ghi ý kiến: các ô người duyệt được sửa trở thành bắt buộc
-  const rejectForm = useMemo(
-    () => ({ ...form, fields: form.fields.map(f => (f.readOnly ? f : { ...f, required: true })) }),
-    [form],
-  );
-  const ctl = useDynamicForm(rejectForm);
+  // Form ý kiến khi từ chối: chỉ các ô người duyệt được sửa (bỏ ô readOnly của đơn), và bắt buộc ghi
+  const rejectForm = useMemo(() => {
+    const properties = Object.fromEntries(
+      Object.entries(form.schema.properties ?? {}).filter(([, p]) => typeof p === 'object' && !p.readOnly),
+    );
+    return { schema: { ...form.schema, properties, required: Object.keys(properties) }, uiSchema: form.uiSchema };
+  }, [form]);
+  const ref = useRef<SchemaFormRef>(null);
+  const [data, setData] = useState<FormValues>({});
   const [asking, setAsking] = useState<{ id: string; name: string } | null>(null);
   const outcomes = form.outcomes?.length ? form.outcomes : [{ id: '', name: 'Complete' }];
   const rejecting = asking?.id === 'reject';
 
   const confirm = () => {
     if (!asking) return;
-    if (rejecting && !ctl.validate()) return;
+    if (rejecting && !ref.current?.validateForm()) return;
     complete.mutate(
-      { taskId: task.id, values: rejecting ? ctl.payload() : {}, outcome: asking.id || undefined },
+      { taskId: task.id, values: rejecting ? data : {}, outcome: asking.id || undefined },
       {
         onSuccess: () => {
           const text = `Request ${code(r.id)} was ${rejecting ? 'rejected' : 'approved'}.`;
@@ -86,8 +90,8 @@ function Decide({ task, request: r, form }: { task: Task; request: RequestDetail
       <DecisionDialog
         outcome={asking}
         request={r}
-        ctl={ctl}
-        commentFields={rejectForm.fields.filter(f => !f.readOnly)}
+        comment={Object.keys(rejectForm.schema.properties).length > 0 &&
+          <SchemaForm ref={ref} def={rejectForm} data={data} onChange={setData} />}
         busy={complete.isPending}
         onConfirm={confirm}
         onClose={close}

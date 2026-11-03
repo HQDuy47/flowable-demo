@@ -1,11 +1,107 @@
 import { Ic } from '@/shared/ui';
-import { FIELD_TYPES, type FieldType } from '../api';
+import { FIELD_TYPES, type FieldRules, type FieldType } from '../api';
+
+/** Rule đang nhập (chuỗi như trong ô nhập). Cận dưới / cận trên chọn được "≥ / >" và "≤ / <". */
+export type DraftRules = {
+  lo: string; loOp: 'minimum' | 'exclusiveMinimum';
+  hi: string; hiOp: 'maximum' | 'exclusiveMaximum';
+  step: string; // multipleOf: chưa có ô nhập, chỉ giữ giá trị viết tay trong file
+  minLength: string; maxLength: string; pattern: string; patternHint: string;
+};
 
 /** Một trường đang thiết kế. `uid` chỉ dùng làm key trong React; `id` có khi trường đã được lưu. */
-export type DraftField = { uid: string; id?: string; name: string; type: FieldType; required: boolean; options: string };
+export type DraftField = { uid: string; id?: string; name: string; type: FieldType; required: boolean; options: string; rules: DraftRules };
+
+const str = (v: unknown) => (v == null ? '' : String(v));
+
+export const toDraftRules = (r: FieldRules = {}): DraftRules => ({
+  lo: str(r.exclusiveMinimum ?? r.minimum), loOp: r.exclusiveMinimum != null ? 'exclusiveMinimum' : 'minimum',
+  hi: str(r.exclusiveMaximum ?? r.maximum), hiOp: r.exclusiveMaximum != null ? 'exclusiveMaximum' : 'maximum',
+  step: str(r.multipleOf), minLength: str(r.minLength), maxLength: str(r.maxLength), pattern: str(r.pattern),
+  patternHint: str(r.patternHint),
+});
+
+/** Rule gửi lên theo kiểu trường; kiểu không có rule gửi {} để xoá rule cũ. Ô trống bỏ qua. */
+export function toRules(f: DraftField): FieldRules {
+  const r = f.rules;
+  const pairs: [keyof FieldRules, string][] =
+    f.type === 'integer' ? [[r.loOp, r.lo], [r.hiOp, r.hi], ['multipleOf', r.step]]
+      : f.type === 'text' || f.type === 'multi-line-text' ? [['minLength', r.minLength], ['maxLength', r.maxLength], ['pattern', r.pattern], ['patternHint', r.patternHint]]
+      : [];
+  return Object.fromEntries(
+    pairs.filter(([, v]) => v.trim() !== '').map(([k, v]) => [k, k === 'pattern' || k === 'patternHint' ? v.trim() : Number(v)]),
+  );
+}
 
 let seq = 0;
-export const newField = (): DraftField => ({ uid: `n${++seq}`, name: '', type: 'text', required: false, options: '' });
+export const newField = (): DraftField => ({ uid: `n${++seq}`, name: '', type: 'text', required: false, options: '', rules: toDraftRules() });
+
+/** Ô nhập rule theo kiểu trường: số → min / max; chữ → độ dài, pattern. Kiểu khác không có rule. */
+function RuleInputs({ f, n, set }: { f: DraftField; n: number; set: (p: Partial<DraftRules>) => void }) {
+  const r = f.rules;
+  const num = (label: string, key: 'minLength' | 'maxLength') => (
+    <label className="fed__rule">
+      <span className="fl__label">{label}</span>
+      <input className="fi" type="number" min={0} inputMode="numeric" placeholder="None" value={r[key]}
+        onChange={e => set({ [key]: e.target.value })} />
+    </label>
+  );
+  if (f.type === 'integer') {
+    return (
+      <div className="fed__rules" role="group" aria-label={`Field ${n} rules`}>
+        <div className="fed__rule">
+          <span className="fl__label" id={`rule-lo-${f.uid}`}>Minimum</span>
+          <span className="fed__pair">
+            <span className="fi-select fed__op">
+              <select className="fi" aria-label={`Field ${n} minimum: comparison`} value={r.loOp}
+                onChange={e => set({ loOp: e.target.value as DraftRules['loOp'] })}>
+                <option value="minimum">≥</option>
+                <option value="exclusiveMinimum">&gt;</option>
+              </select>
+            </span>
+            <input className="fi" type="number" inputMode="numeric" placeholder="None" value={r.lo}
+              aria-labelledby={`rule-lo-${f.uid}`} onChange={e => set({ lo: e.target.value })} />
+          </span>
+        </div>
+        <div className="fed__rule">
+          <span className="fl__label" id={`rule-hi-${f.uid}`}>Maximum</span>
+          <span className="fed__pair">
+            <span className="fi-select fed__op">
+              <select className="fi" aria-label={`Field ${n} maximum: comparison`} value={r.hiOp}
+                onChange={e => set({ hiOp: e.target.value as DraftRules['hiOp'] })}>
+                <option value="maximum">≤</option>
+                <option value="exclusiveMaximum">&lt;</option>
+              </select>
+            </span>
+            <input className="fi" type="number" inputMode="numeric" placeholder="None" value={r.hi}
+              aria-labelledby={`rule-hi-${f.uid}`} onChange={e => set({ hi: e.target.value })} />
+          </span>
+        </div>
+      </div>
+    );
+  }
+  if (f.type === 'text' || f.type === 'multi-line-text') {
+    return (
+      <div className="fed__rules" role="group" aria-label={`Field ${n} rules`}>
+        {num('Min length', 'minLength')}
+        {num('Max length', 'maxLength')}
+        <label className="fed__rule fed__rule--wide">
+          <span className="fl__label">Pattern (regex)</span>
+          <input className="fi mono" placeholder="e.g. ^NV\d{4}$" value={r.pattern} spellCheck={false}
+            onChange={e => set({ pattern: e.target.value })} />
+        </label>
+        {r.pattern.trim() && (
+          <label className="fed__rule fed__rule--full">
+            <span className="fl__label">Message when the format is wrong</span>
+            <input className="fi" placeholder="e.g. Use NV followed by 4 digits, e.g. NV0123." value={r.patternHint} maxLength={200}
+              onChange={e => set({ patternHint: e.target.value })} />
+          </label>
+        )}
+      </div>
+    );
+  }
+  return null;
+}
 
 /** Danh sách trường: nhãn, kiểu, bắt buộc, lựa chọn (dropdown), đổi thứ tự, xoá. */
 export function FieldEditor({ fields, onChange, showErrors }: {
@@ -57,6 +153,7 @@ export function FieldEditor({ fields, onChange, showErrors }: {
                     placeholder={'Laptop\nMonitor\nOther'} onChange={e => patch(i, { options: e.target.value })} />
                 </label>
               )}
+              <RuleInputs f={f} n={n} set={p => patch(i, { rules: { ...f.rules, ...p } })} />
             </li>
           );
         })}

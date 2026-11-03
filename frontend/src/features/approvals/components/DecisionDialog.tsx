@@ -1,4 +1,4 @@
-import { Fields, type Field, type FormCtl } from '@/shared/form';
+import type { ReactNode } from 'react';
 import { code } from '@/shared/lib/format';
 import { Cmd, Dialog } from '@/shared/ui';
 import type { RequestDetail } from '../types';
@@ -8,11 +8,11 @@ import { outcomeAction } from './badges';
  * Hộp thoại quyết định: Duyệt thì chỉ hỏi xác nhận, Từ chối thì bắt buộc ghi lý do.
  * `outcome` null là đang đóng.
  */
-export function DecisionDialog({ outcome, request: r, ctl, commentFields, busy, onConfirm, onClose }: {
+export function DecisionDialog({ outcome, request: r, comment, busy, onConfirm, onClose }: {
   outcome: { id: string; name: string } | null;
   request: RequestDetail;
-  ctl: FormCtl;
-  commentFields: Field[];
+  /** form ý kiến khi từ chối (rjsf); không có thì chỉ hỏi xác nhận */
+  comment?: ReactNode;
   busy: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -34,7 +34,7 @@ export function DecisionDialog({ outcome, request: r, ctl, commentFields, busy, 
       {rejecting ? (
         <>
           <p>Tell {sender} why request <b>{code(r.id)}</b> is being rejected.</p>
-          {commentFields.length > 0 && <Fields ctl={ctl} fields={commentFields} />}
+          {comment}
         </>
       ) : (
         <p>{action} request <b>{code(r.id)}</b> from {sender}? Once confirmed, it leaves the approval queue.</p>

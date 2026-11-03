@@ -1,10 +1,11 @@
 # Flowable request demo
 
-Demo quy trình đơn từ (lập đơn → trưởng phòng duyệt) chạy trên Flowable. Gồm ba phần:
+Demo quy trình đơn từ (lập đơn → trưởng phòng duyệt) chạy trên Flowable. Gồm các phần:
 
-| Thư mục | Vai trò | Cổng |
+| Thành phần | Vai trò | Cổng |
 |---|---|---|
-| `flowable/` | loại đơn (`request-types/*.json`, mỗi file giữ mọi phiên bản) | Flowable REST: 8081 |
+| PostgreSQL | dữ liệu Flowable (bảng `act_*`) + loại đơn (schema `app`) | 5433 |
+| Flowable REST | điều phối quy trình | 8081 |
 | `backend/` | NestJS BFF, gọi Flowable REST, gộp dữ liệu cho UI | 3000 |
 | `frontend/` | React 19 + Vite admin UI | 5173 (proxy `/api` → 3000) |
 
@@ -15,14 +16,16 @@ Người dùng nói tiếng Việt: trả lời bằng tiếng Việt. Comment t
 ```powershell
 docker compose up -d                        # flowable/flowable-rest:7.1.0 + PostgreSQL 16 (volume flowable-db-data)
 cd backend;  npm run start:dev              # watch mode, người dùng thường đã bật sẵn
+cd backend;  npm run seed                   # tạo 2 loại đơn mẫu nếu chưa có (cần backend đang chạy)
 cd frontend; npm run dev
 ```
 
-- `backend/.env`: `FLOWABLE_URL`, `FLOWABLE_USER=rest-admin`, `FLOWABLE_PASSWORD=test`.
-- Dữ liệu Flowable nằm trong PostgreSQL (container `flowable-db`, user/pass/db đều là `flowable`, host port 5433), restart không mất. `docker compose down -v` mới xoá sạch.
+- `backend/.env`: `FLOWABLE_URL`, `FLOWABLE_USER=rest-admin`, `FLOWABLE_PASSWORD=test`, `DATABASE_URL` (mặc định `postgres://flowable:flowable@localhost:5433/flowable`).
+- Dữ liệu Flowable nằm trong PostgreSQL (container `flowable-demo-flowable-db-1`, user/pass/db đều là `flowable`, host port 5433), restart không mất. `docker compose down -v` mới xoá sạch.
 - **Một quy trình chung cho mọi loại đơn**: BPMN `requestApproval` (hằng `GENERIC_BPMN` trong `backend/src/request-types.ts`: start → userTask "Manager approval" giao `checker` → gateway `decision`). `FlowableService.ensureProcess` deploy lúc khởi động nếu Flowable chưa có hoặc nội dung khác `GENERIC_BPMN` (sửa BPMN trong code là tự lên phiên bản mới). Không có file BPMN / `.form` nào, không deploy theo loại đơn.
-- **Form gắn qua `formKey` dạng biểu thức**: userTask có `flowable:formKey="${requestType}:${requestTypeVersion}:approve"`, Flowable tính lúc tạo task → vd. `leaveRequest:1:approve`. Backend tra form bằng `RequestTypesService.formByKey` (`formKeyOf` / `parseFormKey`). `startEvent` không có formKey (chưa có biến lúc hiện form lập đơn); form lập đơn có key `<loại>:<phiên bản>:start`.
-- Loại đơn là dữ liệu: `flowable/request-types/<key>.json` (`key`, `name`, `fields`, `version` mới nhất, `versions[]`). 4 loại mẫu: leaveRequest, businessTripRequest, advanceRequest, overtimeRequest.
+- **Form gắn qua `formKey` dạng biểu thức**: userTask có `flowable:formKey="${requestType}:${requestTypeVersion}:approve"`, Flowable tính lúc tạo task → vd. `reqDonXinNghiPhep:2:approve`. Backend tra form bằng `RequestTypesService.formByKey` (`formKeyOf` / `parseFormKey`). `startEvent` không có formKey (chưa có biến lúc hiện form lập đơn); form lập đơn có key `<loại>:<phiên bản>:start`.
+- Loại đơn là dữ liệu, lưu trong PostgreSQL schema `app` (`RequestTypesService`, thư viện `pg`; bảng tạo lúc khởi động bằng `CREATE ... IF NOT EXISTS`): `app.request_types` (key, name, latest_version, created/updated) và `app.request_type_versions` (type_key, version, name, `fields` jsonb, saved_at/by; chỉ thêm, không sửa). Sửa loại đơn chạy trong transaction `FOR UPDATE` nên hai admin lưu cùng lúc thành hai phiên bản liên tiếp. Seed: `backend/scripts/seed-request-types.mjs`. 2 loại mẫu: `reqDonMuaThietBi` (Đơn mua thiết bị, đủ các kiểu ô và rule), `reqDonXinNghiPhep` (Đơn xin nghỉ phép). Id trường tiếng Anh, có `employeeName` để điền sẵn họ tên.
+- Trường có thể có `rules` = từ khoá JSON Schema (`FieldRules`: integer → `minimum`/`maximum`/`exclusiveMinimum`/`exclusiveMaximum`/`multipleOf`; text → `minLength`/`maxLength`/`pattern`). `toJsonSchema` đưa thẳng vào schema nên rjsf tự kiểm tra; `POST processes/:key/start` kiểm tra lại bằng ajv (`checkStartValues`, bỏ ô `''`, đổi "2" → 2) rồi mới gọi Flowable. Câu báo lỗi: `toJsonSchema` sinh `errorMessage` cho từng trường (vd. `exclusiveMinimum` → "Enter a number greater than 100,000."; `pattern` → `rules.patternHint` do admin viết, không phải từ khoá JSON Schema); rjsf (`transformErrors` trong `SchemaForm`) và ajv backend (`addKeyword('errorMessage')`) cùng đọc nên hai nơi một câu. Trang thiết kế có ô Rules dưới mỗi trường (`RuleInputs` trong `FieldEditor.tsx`) và luôn gửi `rules` (kiểu không có rule gửi `{}`).
 - Mỗi đơn mang biến `requestType`, `requestTypeVersion`, `requestTypeName` (`TYPE_VARS`). Form lập đơn và form duyệt được dựng lúc chạy từ đúng phiên bản đó (`startForm`, `approveForm`), nên đơn cũ luôn hiện form lúc gửi. Id trường không được trùng các biến này (`RESERVED`).
 - Kiểm tra: `cd frontend; npx tsc -b; npx vite build`. Backend: `npm run build`.
 
@@ -45,13 +48,13 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 ### 1. New request (`#/new/:processId?`, vai trò `maker`)
 1. `GET /api/processes` trả về các loại đơn (id = key loại đơn), xếp theo tên. Không có `processId` thì chuyển sang loại đầu tiên.
 2. Chọn loại đơn bằng các nút pill (`ProcessPicker`). `GET /api/processes/:id/start-form` tải form. `employeeName` được điền sẵn.
-3. Form được vẽ động bằng `shared/form` (`useDynamicForm` + `Fields`), kiểm tra các trường bắt buộc.
+3. Form được vẽ bằng **react-jsonschema-form** (`shared/form/SchemaForm.tsx`, renderer duy nhất): backend trả JSON Schema + uiSchema (`toJsonSchema`), rjsf tự vẽ ô và kiểm tra (bắt buộc, kiểu, rule). `SchemaForm` dùng lại khung `.fl`/`.fi` và `DateInput` (dd/mm/yyyy). Nút gửi ở ngoài form nên gọi `ref.current.validateForm()`.
 4. Nút **Submit for approval** (hàng tiêu đề, bên phải) gọi `POST /api/processes/:key/start`. Thành công thì hiện toast kèm mã đơn, form được làm trống, hàng chờ duyệt được tải lại.
 
 ### 2. Approvals (`#/approvals`, `#/approvals/:taskId`, vai trò `checker`)
 1. `GET /api/tasks` trả về các đơn chờ duyệt. Bảng có ô lọc; bấm vào dòng để mở đơn. Số đơn chờ hiện cạnh menu.
 2. Trang chi tiết:
-   - `GET /api/tasks/:id/form` tải form duyệt (các trường chỉ đọc + `managerComment`);
+   - `GET /api/tasks/:id/form` tải form duyệt (JSON Schema: các trường chỉ đọc + `managerComment`, kèm `outcomes`, `formData`); hộp thoại Reject vẽ các ô không `readOnly` bằng `SchemaForm`, tất cả bắt buộc;
    - `GET /api/requests/:id` tải thông tin đơn, timeline và lịch sử.
 3. **Approve** mở hộp thoại xác nhận. **Reject** mở hộp thoại bắt buộc nhập ý kiến. Cả hai gọi `POST /api/tasks/:id/complete` với `{ outcome, values }`. Backend ghi biến `decision`, gateway trong BPMN rẽ nhánh theo biến này.
 4. Xong thì hiện toast rồi quay về `#/approvals`.
@@ -60,13 +63,13 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 1. Danh sách loại đơn (`GET /api/request-types`): tên, key, số trường, phiên bản.
 2. Trang thiết kế có các phần:
    - **Details**: tên loại đơn;
-   - **Fields**: nhãn, kiểu (text, multi-line-text, integer, date, dropdown, boolean), ô bắt buộc, lựa chọn của dropdown, đổi thứ tự, xoá;
-   - **Preview**: form thật, dùng lại `shared/form`;
+   - **Fields**: nhãn, kiểu (text, multi-line-text, integer, date, dropdown, boolean), ô bắt buộc, lựa chọn của dropdown, rule (số: min ≥/> và max ≤/<; chữ: độ dài, pattern), đổi thứ tự, xoá;
+   - **Preview**: `POST /api/request-types/preview` dựng JSON Schema từ bản chưa lưu (cùng `normalize` + `toJsonSchema`), vẽ bằng `SchemaForm` nên rule chạy ngay; rule sai thì hiện lý do;
    - **Workflow**: cố định một bước trưởng phòng duyệt.
 3. Lưu bằng `POST /api/request-types` (tạo mới) hoặc `PUT /api/request-types/:key` (phiên bản mới). Backend (`backend/src/request-types*.ts`) làm các bước sau:
    - chuẩn hoá và kiểm tra dữ liệu; sinh id trường camelCase không dấu; giữ id cũ khi sửa;
-   - thêm một phiên bản vào `versions[]` và ghi file `flowable/request-types/<key>.json`. Không gọi Flowable.
-4. Loại đơn mới xuất hiện ngay trong New request. Đơn đã gửi vẫn hiện form của phiên bản lúc gửi. Chưa có chức năng xoá: xoá file JSON thì đơn đã gửi của loại đó không mở được form duyệt nữa.
+   - thêm một dòng vào `app.request_type_versions` và cập nhật `app.request_types`. Không gọi Flowable.
+4. Loại đơn mới xuất hiện ngay trong New request. Đơn đã gửi vẫn hiện form của phiên bản lúc gửi. Chưa có chức năng xoá: xoá dòng trong `app.request_type_versions` thì đơn đã gửi theo phiên bản đó không mở được form duyệt nữa.
 
 ## Backend API (`/api`)
 
@@ -75,22 +78,23 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 | GET | `users` | người dùng demo |
 | POST | `login` | `{ username, password }`, 401 nếu sai |
 | GET | `processes` | loại đơn (id = key) |
-| GET | `processes/:key/start-form` | form lập đơn của phiên bản mới nhất |
+| GET | `processes/:key/start-form` | form lập đơn của phiên bản mới nhất: `{ key, name, schema, uiSchema }` |
 | POST | `processes/:key/start` | `{ values }`, header `x-user-id`; start `requestApproval` kèm loại đơn + phiên bản |
 | GET | `requests/:id` | chi tiết đơn + timeline |
 | GET | `tasks`, `tasks/done` | việc chờ / đã xử lý của người trong header |
-| GET | `tasks/:id/form` | form duyệt kèm giá trị |
+| GET | `tasks/:id/form` | form duyệt: `{ key, name, schema, uiSchema, outcomes, formData }` |
+| GET | `forms/:formKey/json-schema` | form theo formKey ở dạng JSON Schema + uiSchema (rjsf) |
 | POST | `tasks/:id/complete` | `{ outcome, values }` |
-| GET/POST/PUT | `request-types[/:key]` | chỉ admin (403 nếu không phải admin) |
+| GET/POST/PUT | `request-types[/:key]`, POST `request-types/preview` | chỉ admin (403 nếu không phải admin) |
 
-Flowable chỉ điều phối (task, giao việc, rẽ nhánh), không biết gì về form. Form do backend dựng từ loại đơn, cùng hình dạng form model của Flowable nên frontend (`shared/form`) không đổi.
+Flowable chỉ điều phối (task, giao việc, rẽ nhánh), không biết gì về form. Form do backend dựng từ loại đơn (form model kiểu Flowable, tra theo formKey) rồi chuyển sang JSON Schema trước khi trả cho frontend.
 
 ## Cấu trúc frontend (feature-based)
 
 ```
 src/app/         App (QueryClient, Router, Devtools), router.tsx, layout/AppLayout.tsx, layout/nav.ts
 src/features/    requests/, approvals/, request-types/, users/: mỗi feature có api.ts, hooks.ts, components/, pages/, index.ts
-src/shared/      api/http.ts (axios, gắn x-user-id), auth/session.ts (phiên đăng nhập), form/ (form động), lib/format.ts, ui/ (Cmd, Dialog, MessageBar, RecordHeader, Section, icons...)
+src/shared/      api/http.ts (axios, gắn x-user-id), auth/session.ts (phiên đăng nhập), form/ (SchemaForm = rjsf, DateInput, arrangeFields cho phần hiển thị đơn), lib/format.ts, ui/ (Cmd, Dialog, MessageBar, RecordHeader, Section, icons...)
 src/styles/      tokens.css, base.css, index.css
 ```
 
@@ -110,7 +114,7 @@ src/styles/      tokens.css, base.css, index.css
 ## Lưu ý khi làm việc
 
 - Không commit nếu không được yêu cầu.
-- Dữ liệu thử (loại đơn, deployment) tạo trên Flowable phải được dọn đi sau khi test.
+- Dữ liệu thử phải được dọn đi sau khi test: đơn (DELETE `runtime/` + `history/process-instances` trên Flowable) và loại đơn (xoá dòng trong `app.request_type_versions` rồi `app.request_types`).
 - Trên Windows, curl làm hỏng tiếng Việt trong body: dùng script node cho payload UTF-8.
-- Heredoc có dấu backtick bị lỗi trong Bash: ghi file bằng Write tool.
+- Heredoc trong Bash làm hỏng dấu backtick và nuốt dấu `\` (pattern `^NV\d{4}$` thành `^NVd{4}$`): script / file có ký tự này thì ghi bằng Write tool.
 - Chụp màn hình: dùng puppeteer-core với Chrome tại `C:/Program Files/Google/Chrome/Application/chrome.exe`.

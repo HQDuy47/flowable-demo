@@ -1,4 +1,5 @@
 import { http } from '@/shared/api/http';
+import type { SchemaFormDef } from '@/shared/form';
 
 /** Kiểu trường hỗ trợ (khớp backend/src/request-types.ts). */
 export const FIELD_TYPES = [
@@ -11,7 +12,15 @@ export const FIELD_TYPES = [
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number]['id'];
 
-export type TypeField = { id: string; name: string; type: FieldType; required: boolean; options?: string[] };
+/** Rule kiểm tra của trường = từ khoá JSON Schema (khớp FieldRules ở backend). */
+export type FieldRules = {
+  minimum?: number; maximum?: number; exclusiveMinimum?: number; exclusiveMaximum?: number; multipleOf?: number;
+  minLength?: number; maxLength?: number; pattern?: string;
+  /** câu báo lỗi khi sai pattern, hiện cho người lập đơn */
+  patternHint?: string;
+};
+
+export type TypeField = { id: string; name: string; type: FieldType; required: boolean; options?: string[]; rules?: FieldRules };
 
 /** Bản thiết kế loại đơn. `version` là phiên bản mới nhất (mỗi lần lưu tăng 1). */
 export type RequestType = {
@@ -22,7 +31,7 @@ export type RequestType = {
 /** Dữ liệu gửi lên khi lưu; trường mới chưa có id. */
 export type RequestTypeInput = {
   name: string;
-  fields: { id?: string; name: string; type: FieldType; required: boolean; options?: string[] }[];
+  fields: { id?: string; name: string; type: FieldType; required: boolean; options?: string[]; rules?: FieldRules }[];
 };
 
 const enc = encodeURIComponent;
@@ -34,4 +43,6 @@ export const requestTypesApi = {
   create: (input: RequestTypeInput) => http.post<RequestType>('/request-types', input).then(r => r.data),
   update: ({ key, input }: { key: string; input: RequestTypeInput }) =>
     http.put<RequestType>(`/request-types/${enc(key)}`, input).then(r => r.data),
+  /** Form lập đơn (JSON Schema) dựng từ bản thiết kế chưa lưu; không ghi gì. */
+  preview: (input: RequestTypeInput) => http.post<SchemaFormDef>('/request-types/preview', input).then(r => r.data),
 };

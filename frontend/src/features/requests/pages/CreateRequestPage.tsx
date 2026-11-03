@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useUser } from '@/features/users';
 import { getSession } from '@/shared/auth/session';
-import type { FormModel } from '@/shared/form';
 import { Empty, Problem, Skeleton } from '@/shared/ui';
 import type { Process } from '../api';
 import { CreateRequestForm } from '../components/CreateRequestForm';
@@ -49,10 +48,7 @@ function StartFormLoader({ process, ...rest }: {
   if (form.isError) return <div className="pad"><Problem error={form.error} onRetry={() => form.refetch()} /></div>;
   if (!form.data) return <div className="pad"><Skeleton rows={8} /></div>;
 
-  const model: FormModel = {
-    ...form.data,
-    // điền sẵn họ tên nhân viên đang lập đơn
-    fields: form.data.fields.map(f => (f.id === 'employeeName' && !f.value && employee ? { ...f, value: employee.name } : f)),
-  };
-  return <CreateRequestForm key={employee ? 'with-name' : 'no-name'} process={process} employee={employee} model={model} {...rest} />;
+  // điền sẵn họ tên nhân viên đang lập đơn (nếu form có trường này)
+  const initial = employee && form.data.schema.properties?.employeeName ? { employeeName: employee.name } : {};
+  return <CreateRequestForm key={employee ? 'with-name' : 'no-name'} process={process} employee={employee} form={form.data} initial={initial} {...rest} />;
 }

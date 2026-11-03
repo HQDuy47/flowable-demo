@@ -7,12 +7,34 @@
 export const FIELD_TYPES = ['text', 'multi-line-text', 'integer', 'date', 'dropdown', 'boolean'] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
+/** Rule kiểm tra của một trường: chính là từ khoá JSON Schema, đưa thẳng vào schema của trường. */
+export interface FieldRules {
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number; // "> x"
+  exclusiveMaximum?: number; // "< x"
+  multipleOf?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  /** Câu báo lỗi khi sai pattern, admin tự viết (vd. "NV followed by 4 digits"). Không phải từ khoá JSON Schema. */
+  patternHint?: string;
+}
+
+/** Rule dùng được cho từng kiểu trường; kiểu khác không có rule. */
+const RULES_FOR: Partial<Record<FieldType, readonly (keyof FieldRules)[]>> = {
+  integer: ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'],
+  text: ['minLength', 'maxLength', 'pattern', 'patternHint'],
+  'multi-line-text': ['minLength', 'maxLength', 'pattern', 'patternHint'],
+};
+
 export interface TypeField {
   id: string;
   name: string;
   type: FieldType;
   required: boolean;
   options?: string[];
+  rules?: FieldRules;
 }
 
 /** Một phiên bản của loại đơn. Đơn đã gửi ghi lại số phiên bản nên luôn đọc đúng form lúc gửi. */
@@ -39,7 +61,7 @@ export interface RequestType {
 /** Dữ liệu frontend gửi lên; trường mới chưa có id. */
 export interface RequestTypeInput {
   name: string;
-  fields: Array<{ id?: string; name: string; type: string; required?: boolean; options?: string[] }>;
+  fields: Array<{ id?: string; name: string; type: string; required?: boolean; options?: string[]; rules?: Record<string, unknown> }>;
 }
 
 /** Người duyệt của mọi loại đơn (khớp users.ts). */
@@ -117,9 +139,51 @@ export function normalize(input: RequestTypeInput): { name: string; fields: Type
       if (options.length === 0) throw new Error(`Field "${label}" needs at least one option.`);
       field.options = options;
     }
+    const rules = rulesOf(label, field.type, f.rules);
+    if (rules) field.rules = rules;
     return field;
   });
   return { name, fields };
+}
+
+/** Kiểm tra rule của một trường: đúng từ khoá cho kiểu trường, đúng kiểu giá trị, min không lớn hơn max. */
+function rulesOf(label: string, type: FieldType, raw: unknown): FieldRules | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`The rules of field "${label}" must be an object.`);
+  const allowed = RULES_FOR[type] ?? [];
+  const rules: FieldRules = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v == null || v === '') continue; // ô rule để trống
+    if (!allowed.includes(k as keyof FieldRules)) throw new Error(`Field "${label}" (${type}) does not support the rule "${k}".`);
+    if (k === 'pattern') {
+      try {
+        new RegExp(String(v), 'u'); // ajv dịch pattern với cờ "u"
+      } catch {
+        throw new Error(`Field "${label}" has an invalid pattern.`);
+      }
+      rules.pattern = String(v);
+      continue;
+    }
+    if (k === 'patternHint') {
+      const hint = String(v).trim();
+      if (hint.length > 200) throw new Error(`The pattern hint of field "${label}" must be 200 characters or fewer.`);
+      if (hint) rules.patternHint = hint;
+      continue;
+    }
+    const n = Number(v);
+    if (!Number.isFinite(n)) throw new Error(`Rule "${k}" of field "${label}" must be a number.`);
+    if ((k === 'minLength' || k === 'maxLength') && (!Number.isInteger(n) || n < 0))
+      throw new Error(`Rule "${k}" of field "${label}" must be a whole number of 0 or more.`);
+    if (k === 'multipleOf' && n <= 0) throw new Error(`Rule "multipleOf" of field "${label}" must be greater than 0.`);
+    rules[k as Exclude<keyof FieldRules, 'pattern' | 'patternHint'>] = n;
+  }
+  if (!rules.pattern) delete rules.patternHint; // không có pattern thì gợi ý vô nghĩa
+  const lo = rules.minimum ?? rules.exclusiveMinimum;
+  const hi = rules.maximum ?? rules.exclusiveMaximum;
+  if (lo != null && hi != null && lo > hi) throw new Error(`Field "${label}": the minimum is greater than the maximum.`);
+  if (rules.minLength != null && rules.maxLength != null && rules.minLength > rules.maxLength)
+    throw new Error(`Field "${label}": the minimum length is greater than the maximum length.`);
+  return Object.keys(rules).length ? rules : undefined;
 }
 
 export type FormKind = 'start' | 'approve';
@@ -145,6 +209,7 @@ export function startForm(key: string, v: TypeVersion) {
       type: f.type,
       required: f.required,
       ...(f.options ? { options: f.options.map((o) => ({ name: o })) } : {}),
+      ...(f.rules ? { rules: f.rules } : {}),
     })),
   };
 }
@@ -162,6 +227,67 @@ export function approveForm(key: string, v: TypeVersion) {
       { id: 'approve', name: 'Approve' },
       { id: 'reject', name: 'Reject' },
     ],
+  };
+}
+
+type FormLike = {
+  name: string;
+  fields: Array<{
+    id: string; name: string; type: string; required?: boolean; readOnly?: boolean;
+    options?: { name: string }[]; rules?: FieldRules;
+  }>;
+};
+
+const num = (n: number) => n.toLocaleString('en-US');
+
+/**
+ * Câu báo lỗi dễ hiểu cho từng từ khoá, đặt trong `errorMessage` của trường (cùng quy ước với ajv-errors).
+ * rjsf (frontend) và ajv (backend) cùng đọc chỗ này nên người dùng thấy một câu ở cả hai nơi.
+ */
+function errorMessages(type: string, r: Omit<FieldRules, 'patternHint'>, patternHint?: string) {
+  const m: Record<string, string> = { required: 'This field is required.' };
+  if (type === 'integer') m.type = 'Enter a whole number, without decimals or letters.';
+  if (type === 'date') m.format = 'Enter a valid date as dd/mm/yyyy.';
+  if (type === 'dropdown' || type === 'radio-buttons') m.enum = 'Choose one of the options in the list.';
+  if (r.minimum != null) m.minimum = `Enter ${num(r.minimum)} or more.`;
+  if (r.exclusiveMinimum != null) m.exclusiveMinimum = `Enter a number greater than ${num(r.exclusiveMinimum)}.`;
+  if (r.maximum != null) m.maximum = `Enter ${num(r.maximum)} or less.`;
+  if (r.exclusiveMaximum != null) m.exclusiveMaximum = `Enter a number less than ${num(r.exclusiveMaximum)}.`;
+  if (r.multipleOf != null) m.multipleOf = `Enter a multiple of ${num(r.multipleOf)}.`;
+  if (r.minLength != null) m.minLength = `Enter at least ${r.minLength} characters.`;
+  if (r.maxLength != null) m.maxLength = `Enter no more than ${r.maxLength} characters.`;
+  if (r.pattern) m.pattern = patternHint || 'This value is not in the expected format.';
+  return m;
+}
+
+/**
+ * Form (startForm / approveForm) → JSON Schema (dữ liệu hợp lệ trông thế nào) + uiSchema (hiển thị ra sao),
+ * cho react-jsonschema-form. Vẫn tra theo formKey nên đúng phiên bản loại đơn của từng đơn.
+ */
+export function toJsonSchema(form: FormLike) {
+  const properties: Record<string, Record<string, unknown>> = {};
+  const uiSchema: Record<string, Record<string, unknown>> = {};
+  for (const f of form.fields) {
+    const p: Record<string, unknown> = { title: f.name, type: 'string' };
+    if (f.readOnly) p.readOnly = true;
+    if (f.type === 'integer') p.type = 'integer';
+    if (f.type === 'boolean') p.type = 'boolean';
+    if (f.type === 'date') p.format = 'date';
+    if (f.type === 'dropdown' || f.type === 'radio-buttons') p.enum = (f.options ?? []).map((o) => o.name);
+    if (f.type === 'multi-line-text') uiSchema[f.id] = { 'ui:widget': 'textarea' };
+    const { patternHint, ...keywords } = f.rules ?? {};
+    Object.assign(p, keywords); // rule đã là từ khoá JSON Schema
+    if (!f.readOnly) p.errorMessage = errorMessages(f.type, keywords, patternHint);
+    properties[f.id] = p;
+  }
+  return {
+    schema: {
+      title: form.name,
+      type: 'object',
+      required: form.fields.filter((f) => f.required && !f.readOnly).map((f) => f.id),
+      properties,
+    },
+    uiSchema,
   };
 }
 

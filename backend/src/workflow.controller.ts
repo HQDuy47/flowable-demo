@@ -1,11 +1,16 @@
-import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Headers, NotFoundException, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { FlowableService } from './flowable.service.js';
+import { RequestTypesService } from './request-types.service.js';
+import { toJsonSchema } from './request-types.js';
 import { DEMO_PASSWORD, findUser, USERS } from './users.js';
 
 /** Đăng nhập demo qua POST /api/login; sau đó người dùng hiện tại lấy từ header "x-user-id" do frontend gửi. */
 @Controller('api')
 export class WorkflowController {
-  constructor(private readonly flowable: FlowableService) {}
+  constructor(
+    private readonly flowable: FlowableService,
+    private readonly types: RequestTypesService,
+  ) {}
 
   @Get('users')
   listUsers() { return USERS; }
@@ -25,8 +30,10 @@ export class WorkflowController {
   getStartForm(@Param('id') id: string) { return this.flowable.getStartForm(id); }
 
   @Post('processes/:key/start')
-  start(@Param('key') key: string, @Body() body: { values: Record<string, any> }, @Headers('x-user-id') user: string) {
-    return this.flowable.startProcess(key, body.values, user);
+  async start(@Param('key') key: string, @Body() body: { values: Record<string, any> }, @Headers('x-user-id') user: string) {
+    // kiểm tra lại theo JSON Schema (bắt buộc, kiểu, rule) — không tin dữ liệu từ trình duyệt
+    const values = await this.types.checkStartValues(key, body?.values);
+    return this.flowable.startProcess(key, values, user);
   }
 
   @Get('requests/:id')
@@ -42,6 +49,14 @@ export class WorkflowController {
 
   @Get('tasks/:id/form')
   getTaskForm(@Param('id') id: string) { return this.flowable.getTaskForm(id); }
+
+  /** Form theo formKey (vd. "leaveRequest:1:start") ở dạng JSON Schema + uiSchema, cho react-jsonschema-form. */
+  @Get('forms/:formKey/json-schema')
+  async getFormSchema(@Param('formKey') formKey: string) {
+    const form = await this.types.formByKey(formKey);
+    if (!form) throw new NotFoundException(`Form "${formKey}" was not found`);
+    return toJsonSchema(form);
+  }
 
   @Post('tasks/:id/complete')
   complete(

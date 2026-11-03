@@ -30,6 +30,13 @@ export class RequestTypesController {
     return this.types.create(body, this.admin(user));
   }
 
+  /** Xem trước form lập đơn từ bản thiết kế chưa lưu (cùng JSON Schema mà đơn thật sẽ dùng). Không ghi gì. */
+  @Post('preview')
+  preview(@Body() body: RequestTypeInput, @Headers('x-user-id') user: string) {
+    this.admin(user);
+    return this.types.preview(body);
+  }
+
   @Put(':key')
   update(@Param('key') key: string, @Body() body: RequestTypeInput, @Headers('x-user-id') user: string) {
     return this.types.update(key, body, this.admin(user));
