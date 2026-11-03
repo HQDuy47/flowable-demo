@@ -197,25 +197,54 @@ export function parseFormKey(formKey: unknown): { key: string; version: number; 
   return m ? { key: m[1], version: Number(m[2]), kind: m[3] as FormKind } : null;
 }
 
-/** Form lập đơn (cùng hình dạng form model của Flowable mà frontend đang vẽ). */
-export function startForm(key: string, v: TypeVersion) {
+/**
+ * Phần mở rộng của một trường, đặt trong `params` vì form model Flowable chỉ nhận đúng các thuộc tính
+ * id, name, type, value, required, readOnly, placeholder, layout, overrideId, params (thuộc tính lạ → lỗi deploy).
+ * rules = từ khoá JSON Schema (+ patternHint), messages = câu báo lỗi theo từng từ khoá.
+ */
+export type FieldParams = { rules?: FieldRules; messages?: Record<string, string> };
+
+/** Form definition kiểu Flowable (file .form): deploy lên form engine, renderer tự viết vẽ thẳng từ đây. */
+export interface FormDefinition {
+  key: string;
+  name: string;
+  fields: Array<{
+    /** "FormField" | "OptionFormField" (dropdown) */
+    fieldType: string;
+    id: string;
+    name: string;
+    type: string;
+    required?: boolean;
+    readOnly?: boolean;
+    options?: { name: string }[];
+    params?: FieldParams;
+  }>;
+  outcomes?: { id: string; name: string }[];
+}
+
+/** Form lập đơn của một phiên bản loại đơn, ở định dạng form definition của Flowable. */
+export function startForm(key: string, v: TypeVersion): FormDefinition {
   return {
     key: formKeyOf(key, v.version, 'start'),
     name: v.name,
-    fields: v.fields.map((f) => ({
-      fieldType: f.type === 'dropdown' ? 'OptionFormField' : 'FormField',
-      id: f.id,
-      name: f.name,
-      type: f.type,
-      required: f.required,
-      ...(f.options ? { options: f.options.map((o) => ({ name: o })) } : {}),
-      ...(f.rules ? { rules: f.rules } : {}),
-    })),
+    fields: v.fields.map((f) => {
+      const { patternHint, ...keywords } = f.rules ?? {};
+      return {
+        fieldType: f.type === 'dropdown' ? 'OptionFormField' : 'FormField',
+        id: f.id,
+        name: f.name,
+        type: f.type,
+        required: f.required,
+        ...(f.options ? { options: f.options.map((o) => ({ name: o })) } : {}),
+        params: { ...(f.rules ? { rules: f.rules } : {}), messages: errorMessages(f.type, keywords, patternHint) },
+      };
+    }),
+    outcomes: [],
   };
 }
 
 /** Form duyệt: nhắc lại các trường ở dạng chỉ đọc, thêm ô ý kiến và hai kết quả. */
-export function approveForm(key: string, v: TypeVersion) {
+export function approveForm(key: string, v: TypeVersion): FormDefinition {
   return {
     key: formKeyOf(key, v.version, 'approve'),
     name: `Approve: ${v.name}`,
@@ -233,8 +262,8 @@ export function approveForm(key: string, v: TypeVersion) {
 type FormLike = {
   name: string;
   fields: Array<{
-    id: string; name: string; type: string; required?: boolean; readOnly?: boolean;
-    options?: { name: string }[]; rules?: FieldRules;
+    id: string; name: string; type: string; required?: boolean | null; readOnly?: boolean | null;
+    options?: { name: string }[] | null; params?: FieldParams | null;
   }>;
 };
 
@@ -261,7 +290,8 @@ function errorMessages(type: string, r: Omit<FieldRules, 'patternHint'>, pattern
 }
 
 /**
- * Form (startForm / approveForm) → JSON Schema (dữ liệu hợp lệ trông thế nào) + uiSchema (hiển thị ra sao),
+ * Form definition (lấy từ Flowable theo formKey, hoặc bản nháp của trang Preview) → JSON Schema
+ * (dữ liệu hợp lệ trông thế nào) + uiSchema (hiển thị ra sao),
  * cho react-jsonschema-form. Vẫn tra theo formKey nên đúng phiên bản loại đơn của từng đơn.
  */
 export function toJsonSchema(form: FormLike) {
@@ -275,7 +305,7 @@ export function toJsonSchema(form: FormLike) {
     if (f.type === 'date') p.format = 'date';
     if (f.type === 'dropdown' || f.type === 'radio-buttons') p.enum = (f.options ?? []).map((o) => o.name);
     if (f.type === 'multi-line-text') uiSchema[f.id] = { 'ui:widget': 'textarea' };
-    const { patternHint, ...keywords } = f.rules ?? {};
+    const { patternHint, ...keywords } = f.params?.rules ?? {};
     Object.assign(p, keywords); // rule đã là từ khoá JSON Schema
     if (!f.readOnly) p.errorMessage = errorMessages(f.type, keywords, patternHint);
     properties[f.id] = p;

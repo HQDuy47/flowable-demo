@@ -13,28 +13,17 @@ import { AxiosError, AxiosRequestConfig } from 'axios';
 import { findUser, userRef } from './users.js';
 import { RequestTypesService } from './request-types.service.js';
 import {
+  formKeyOf,
   GENERIC_BPMN,
   GENERIC_PROCESS_KEY,
-  startForm,
-  toJsonSchema,
   TYPE_VARS,
-  type TypeVersion,
 } from './request-types.js';
 
-/** Form trả về cho React — cùng hình dạng với form model của Flowable. */
-export interface FormModel {
-  key: string;
-  name: string;
-  fields: Array<{
-    id: string;
-    name: string;
-    type: string;
-    value?: unknown;
-    readOnly?: boolean;
-    [k: string]: unknown;
-  }>;
+/** Form model lấy từ form engine của Flowable theo formKey. */
+type FormModel = {
+  fields: Array<{ id: string; name: string; type: string; readOnly?: boolean | null }>;
   outcomes?: Array<{ id: string; name: string }>;
-}
+};
 
 export type RequestStatus =
   'pending' | 'approved' | 'rejected' | 'cancelled' | 'done';
@@ -141,9 +130,12 @@ export class FlowableService implements OnModuleInit {
     return Object.entries(values).map(([name, value]) => ({ name, value }));
   }
 
-  /** Phiên bản loại đơn mà đơn này được gửi theo (null nếu là đơn cũ hoặc loại đơn đã mất). */
-  private typeVersionOf(vars: Vars): Promise<TypeVersion | null> {
-    return this.types.version(vars[TYPE_VARS.key], vars[TYPE_VARS.version]);
+  /** Form lập đơn (trên Flowable) của đúng phiên bản loại đơn mà đơn này được gửi theo; null nếu không có. */
+  private startFormOf(vars: Vars) {
+    const key = vars[TYPE_VARS.key], version = Number(vars[TYPE_VARS.version]);
+    return typeof key === 'string' && Number.isInteger(version)
+      ? this.types.formByKey(formKeyOf(key, version, 'start'))
+      : Promise.resolve(null);
   }
 
   private status(p: any, vars: Vars): RequestStatus {
@@ -204,11 +196,13 @@ export class FlowableService implements OnModuleInit {
       .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   }
 
-  /** Form lập đơn theo phiên bản mới nhất của loại đơn. */
+  /**
+   * Form lập đơn theo phiên bản mới nhất, ở dạng JSON Schema lưu theo formKey (cách 2). `key` là formKey:
+   * renderer tự viết dùng nó để lấy form definition từ Flowable (cách 1).
+   */
   async getStartForm(key: string) {
-    const rt = await this.types.get(key);
-    const form = startForm(rt.key, rt.versions.at(-1)!);
-    return { key: form.key, name: form.name, ...toJsonSchema(form) };
+    const { key: formKey, name, schema, uiSchema } = await this.types.latestStartSchema(key);
+    return { key: formKey, name, schema, uiSchema };
   }
 
   /** Gửi đơn: chạy quy trình chung, ghi kèm loại đơn + phiên bản để sau này dựng lại đúng form. */
@@ -248,7 +242,7 @@ export class FlowableService implements OnModuleInit {
     const p = hist.data[0];
     if (!p) throw new NotFoundException(`Request ${id} was not found`);
     const vars = toMap(p.variables);
-    const tv = await this.typeVersionOf(vars);
+    const start = await this.startFormOf(vars);
 
     // mỗi bước dùng form theo formKey của chính task đó
     const steps = await Promise.all(
@@ -271,7 +265,7 @@ export class FlowableService implements OnModuleInit {
         vars,
         tasks.data.find((t: any) => !t.endTime),
       ),
-      fields: (tv?.fields ?? []).map((f) => ({
+      fields: (start?.fields ?? []).map((f) => ({
         id: f.id,
         label: f.name,
         type: f.type,
@@ -343,13 +337,16 @@ export class FlowableService implements OnModuleInit {
     );
   }
 
-  /** Form duyệt tra theo formKey của task (Flowable đã tính sẵn, vd. "leaveRequest:1:approve"), điền sẵn giá trị đơn. */
+  /**
+   * Form duyệt theo formKey của task (Flowable đã tính sẵn, vd. "leaveRequest:1:approve"): JSON Schema đã lưu
+   * theo formKey (cách 2) + kết quả chọn được + giá trị đơn. Renderer tự viết lấy form definition riêng qua formKey.
+   */
   async getTaskForm(taskId: string) {
     const task = await this.call(
       'get',
       `/runtime/tasks/${encodeURIComponent(taskId)}`,
     );
-    const form: FormModel | null = await this.types.formByKey(task.formKey);
+    const form = await this.types.schemaByKey(task.formKey);
     if (!form)
       throw new NotFoundException(
         `Form "${task.formKey ?? ''}" of task ${taskId} was not found`,
@@ -361,8 +358,8 @@ export class FlowableService implements OnModuleInit {
       ),
     );
     // field id trùng tên biến → điền sẵn giá trị (các ô readOnly ở form duyệt)
-    const formData = Object.fromEntries(form.fields.filter((f) => f.id in vars).map((f) => [f.id, vars[f.id]]));
-    return { key: form.key, name: form.name, outcomes: form.outcomes ?? [], formData, ...toJsonSchema(form) };
+    const formData = Object.fromEntries(Object.keys(form.schema.properties ?? {}).filter((id) => id in vars).map((id) => [id, vars[id]]));
+    return { key: form.key, name: form.name, outcomes: form.outcomes, formData, schema: form.schema, uiSchema: form.uiSchema };
   }
 
   async completeTask(

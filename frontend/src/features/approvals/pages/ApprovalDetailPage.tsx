@@ -1,7 +1,9 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { SchemaForm, type FormValues, type SchemaFormRef } from '@/shared/form';
+import {
+  DynamicForm, RENDERER_LABEL, RENDERER_SOURCE, RendererSwitch, useFormRenderer, type DynamicFormRef, type FormValues,
+} from '@/shared/form';
 import { code, errorMessage } from '@/shared/lib/format';
 import { Cmd, CommandBar, Empty, KeyValues, Problem, RecordHeader, Section, Skeleton, Tabs, When } from '@/shared/ui';
 import { outcomeAction, STATUS_LABEL, StatusBadge } from '../components/badges';
@@ -42,13 +44,9 @@ function Decide({ task, request: r, form }: { task: Task; request: RequestDetail
   const navigate = useNavigate();
   const complete = useCompleteTask();
   // Form ý kiến khi từ chối: chỉ các ô người duyệt được sửa (bỏ ô readOnly của đơn), và bắt buộc ghi
-  const rejectForm = useMemo(() => {
-    const properties = Object.fromEntries(
-      Object.entries(form.schema.properties ?? {}).filter(([, p]) => typeof p === 'object' && !p.readOnly),
-    );
-    return { schema: { ...form.schema, properties, required: Object.keys(properties) }, uiSchema: form.uiSchema };
-  }, [form]);
-  const ref = useRef<SchemaFormRef>(null);
+  const hasComment = Object.values(form.schema.properties ?? {}).some(p => typeof p === 'object' && !p.readOnly);
+  const ref = useRef<DynamicFormRef>(null);
+  const [renderer] = useFormRenderer();
   const [data, setData] = useState<FormValues>({});
   const [asking, setAsking] = useState<{ id: string; name: string } | null>(null);
   const outcomes = form.outcomes?.length ? form.outcomes : [{ id: '', name: 'Complete' }];
@@ -56,7 +54,7 @@ function Decide({ task, request: r, form }: { task: Task; request: RequestDetail
 
   const confirm = () => {
     if (!asking) return;
-    if (rejecting && !ref.current?.validateForm()) return;
+    if (rejecting && !ref.current?.validate()) return;
     complete.mutate(
       { taskId: task.id, values: rejecting ? data : {}, outcome: asking.id || undefined },
       {
@@ -75,23 +73,24 @@ function Decide({ task, request: r, form }: { task: Task; request: RequestDetail
   return (
     <>
       <RecordHeader
-        actions={
-          // nút chính (kết quả đầu tiên, thường là Duyệt) nằm ngoài cùng bên phải
-          outcomes.map((o, i) => ({ o, i })).reverse().map(({ o, i }) => (
+        actions={<>
+          <RendererSwitch />
+          {/* nút chính (kết quả đầu tiên, thường là Duyệt) nằm ngoài cùng bên phải */}
+          {outcomes.map((o, i) => ({ o, i })).reverse().map(({ o, i }) => (
             <Cmd key={o.id || 'done'} icon={o.id === 'reject' ? 'reject' : 'approve'} label={outcomeAction(o)}
               primary={i === 0} danger={o.id === 'reject'} disabled={complete.isPending} onClick={() => setAsking(o)} />
-          ))
-        }
+          ))}
+        </>}
         title={<>{r.processName} <span className="rhead__code">{code(r.id)}</span></>}
         subtitle={<StatusBadge status={r.status} />}
         fields={[{ label: 'Submitted by', value: <>{r.initiator?.name ?? 'Unknown'}, <When at={r.startTime} /></> }]}
       />
-      <RequestTabs request={r} />
+      <RequestTabs request={r} formKey={form.key} source={RENDERER_SOURCE[renderer]} renderer={RENDERER_LABEL[renderer]} />
       <DecisionDialog
         outcome={asking}
         request={r}
-        comment={Object.keys(rejectForm.schema.properties).length > 0 &&
-          <SchemaForm ref={ref} def={rejectForm} data={data} onChange={setData} />}
+        comment={hasComment &&
+          <DynamicForm key={renderer} ref={ref} renderer={renderer} def={form} data={data} onChange={setData} editableOnly />}
         busy={complete.isPending}
         onConfirm={confirm}
         onClose={close}
@@ -101,7 +100,9 @@ function Decide({ task, request: r, form }: { task: Task; request: RequestDetail
 }
 
 /** Tab Tổng quan (thông tin đơn, dòng thời gian, xử lý) và Nhật ký. */
-function RequestTabs({ request: r, main }: { request: RequestDetail; main?: ReactNode }) {
+function RequestTabs({ request: r, main, formKey, source, renderer }: {
+  request: RequestDetail; main?: ReactNode; formKey: string; source: string; renderer: string;
+}) {
   return (
     <Tabs tabs={[
       {
@@ -119,6 +120,9 @@ function RequestTabs({ request: r, main }: { request: RequestDetail; main?: Reac
                   { label: 'Current step', value: r.currentTask?.name ?? STATUS_LABEL[r.status] },
                   { label: 'Assignee', value: r.currentTask?.assignee?.name ?? 'None' },
                   { label: 'Finished', value: <When at={r.endTime} /> },
+                  { label: 'Form key', value: <code>{formKey}</code> },
+                  { label: 'Form source', value: source },
+                  { label: 'Renderer', value: renderer },
                 ]} />
               </Section>
             </aside>

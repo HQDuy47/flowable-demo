@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
+import { FlowableFormsService } from './flowable-forms.service.js';
 import { FlowableService } from './flowable.service.js';
 import { WorkflowController } from './workflow.controller.js';
 import { RequestTypesController } from './request-types.controller.js';
@@ -18,6 +19,6 @@ import { RequestTypesService } from './request-types.service.js';
     }),
   ],
   controllers: [WorkflowController, RequestTypesController],
-  providers: [FlowableService, RequestTypesService],
+  providers: [FlowableService, FlowableFormsService, RequestTypesService],
 })
 export class AppModule {}

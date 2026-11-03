@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Headers, NotFoundException, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { FlowableService } from './flowable.service.js';
 import { RequestTypesService } from './request-types.service.js';
-import { toJsonSchema } from './request-types.js';
 import { DEMO_PASSWORD, findUser, USERS } from './users.js';
 
 /** Đăng nhập demo qua POST /api/login; sau đó người dùng hiện tại lấy từ header "x-user-id" do frontend gửi. */
@@ -50,12 +49,24 @@ export class WorkflowController {
   @Get('tasks/:id/form')
   getTaskForm(@Param('id') id: string) { return this.flowable.getTaskForm(id); }
 
-  /** Form theo formKey (vd. "leaveRequest:1:start") ở dạng JSON Schema + uiSchema, cho react-jsonschema-form. */
-  @Get('forms/:formKey/json-schema')
-  async getFormSchema(@Param('formKey') formKey: string) {
+  /**
+   * Form definition theo formKey (vd. "leaveRequest:1:start"), lấy nguyên từ form engine của Flowable
+   * (form-api): key, name, fields (id, name, type, required, readOnly, options, params.rules, params.messages),
+   * outcomes. Renderer tự viết ở frontend vẽ thẳng từ đây.
+   */
+  @Get('forms/:formKey')
+  async getForm(@Param('formKey') formKey: string) {
     const form = await this.types.formByKey(formKey);
     if (!form) throw new NotFoundException(`Form "${formKey}" was not found`);
-    return toJsonSchema(form);
+    return form;
+  }
+
+  /** Cách 2: JSON Schema + uiSchema lưu theo formKey (vd. "leaveRequest:1:start") trong app.form_schemas, cho rjsf. */
+  @Get('forms/:formKey/json-schema')
+  async getFormSchema(@Param('formKey') formKey: string) {
+    const form = await this.types.schemaByKey(formKey);
+    if (!form) throw new NotFoundException(`JSON Schema "${formKey}" was not found`);
+    return form;
   }
 
   @Post('tasks/:id/complete')

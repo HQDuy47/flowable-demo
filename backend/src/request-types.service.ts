@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Ajv, type ValidateFunction } from 'ajv';
 import addFormatsModule from 'ajv-formats';
 import pg from 'pg';
+import { FlowableFormsService } from './flowable-forms.service.js';
 import {
-  approveForm, normalize, parseFormKey, startForm, toJsonSchema, typeKeyFor,
+  approveForm, formKeyOf, normalize, parseFormKey, startForm, toJsonSchema, typeKeyFor,
   type RequestType, type RequestTypeInput, type TypeField, type TypeVersion,
 } from './request-types.js';
 
@@ -38,7 +39,22 @@ const DDL = `
     saved_by text NOT NULL,
     PRIMARY KEY (type_key, version)
   );
+  -- Cách 2: JSON Schema + uiSchema của từng form, lưu theo formKey (không qua form engine Flowable).
+  -- Kiểu json, không phải jsonb: jsonb sắp lại key của object nên thứ tự trường trong "properties" (thứ tự rjsf vẽ) bị đảo.
+  CREATE TABLE IF NOT EXISTS app.form_schemas (
+    form_key   text PRIMARY KEY,
+    name       text NOT NULL,
+    schema     json NOT NULL,
+    ui_schema  json NOT NULL,
+    outcomes   json NOT NULL DEFAULT '[]',
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
 `;
+
+/** Form ở dạng JSON Schema, lưu trong app.form_schemas (cách 2). */
+export type StoredSchema = {
+  key: string; name: string; schema: Record<string, any>; uiSchema: Record<string, any>; outcomes: { id: string; name: string }[];
+};
 
 type VersionRow = { version: number; name: string; fields: TypeField[]; saved_at: Date; saved_by: string };
 const toVersion = (r: VersionRow): TypeVersion => ({
@@ -46,19 +62,96 @@ const toVersion = (r: VersionRow): TypeVersion => ({
 });
 
 /**
- * Loại đơn thiết kế từ giao diện, lưu trong PostgreSQL (DATABASE_URL, mặc định DB của Flowable trong docker compose).
- * Không deploy gì lên Flowable: mọi loại đơn chạy chung quy trình requestApproval.
+ * Loại đơn thiết kế từ giao diện. Bản thiết kế (tên + trường, có phiên bản) lưu trong PostgreSQL schema "app"
+ * (DATABASE_URL). Mỗi phiên bản sinh hai form "<loại>:<phiên bản>:start" và ":approve", lưu ở hai nơi để demo hai cách:
+ * - cách 1: form definition deploy lên form engine của Flowable (formByKey);
+ * - cách 2: JSON Schema + uiSchema lưu trong app.form_schemas theo formKey (schemaByKey).
+ * Mọi loại đơn chạy chung quy trình requestApproval.
  */
 @Injectable()
 export class RequestTypesService implements OnModuleInit, OnModuleDestroy {
+  private readonly log = new Logger(RequestTypesService.name);
   private readonly db = new pg.Pool({
     connectionString: process.env.DATABASE_URL ?? 'postgres://flowable:flowable@localhost:5433/flowable',
   });
   // formKey có phiên bản nên schema không đổi → biên dịch một lần (ajv tự cache theo object sẽ phình bộ nhớ)
   private readonly validators = new Map<string, ValidateFunction>();
+  /** JSON Schema theo formKey (bất biến) */
+  private readonly schemas = new Map<string, StoredSchema>();
+
+  constructor(private readonly forms: FlowableFormsService) {}
 
   async onModuleInit() {
     await this.db.query(DDL);
+    await this.syncSchemas();
+    // Flowable chưa chạy thì bỏ qua: form thiếu sẽ được deploy bù khi có người cần (formByKey)
+    await this.syncForms().catch((e) => this.log.warn(`Could not sync forms to Flowable: ${(e as Error).message}`));
+  }
+
+  /** Lưu JSON Schema của hai form một phiên bản vào app.form_schemas (đã có thì bỏ qua). */
+  private async storeSchemas(c: pg.Pool | pg.PoolClient, key: string, v: TypeVersion) {
+    for (const form of [startForm(key, v), approveForm(key, v)]) {
+      const { schema, uiSchema } = toJsonSchema(form);
+      await c.query(
+        `INSERT INTO app.form_schemas (form_key, name, schema, ui_schema, outcomes) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (form_key) DO NOTHING`,
+        [form.key, form.name, JSON.stringify(schema), JSON.stringify(uiSchema), JSON.stringify(form.outcomes ?? [])],
+      );
+    }
+  }
+
+  /** Lưu bù JSON Schema cho các phiên bản chưa có (vd. phiên bản lưu trước khi có bảng này). */
+  private async syncSchemas() {
+    const { rows } = await this.db.query<VersionRow & { type_key: string }>(`
+      SELECT v.* FROM app.request_type_versions v
+      WHERE NOT EXISTS (SELECT 1 FROM app.form_schemas s WHERE s.form_key = v.type_key || ':' || v.version || ':start')`);
+    for (const r of rows) await this.storeSchemas(this.db, r.type_key, toVersion(r));
+    if (rows.length) this.log.log(`Stored JSON Schema for ${rows.length} version(s)`);
+  }
+
+  /** JSON Schema theo formKey, đọc từ app.form_schemas (cách 2, không qua Flowable). Không có thì null. */
+  async schemaByKey(formKey: unknown): Promise<StoredSchema | null> {
+    if (!parseFormKey(formKey)) return null;
+    const hit = this.schemas.get(formKey as string);
+    if (hit) return hit;
+    const r = (await this.db.query('SELECT * FROM app.form_schemas WHERE form_key = $1', [formKey])).rows[0];
+    if (!r) return null;
+    const s: StoredSchema = { key: r.form_key, name: r.name, schema: r.schema, uiSchema: r.ui_schema, outcomes: r.outcomes };
+    this.schemas.set(s.key, s);
+    return s;
+  }
+
+  /** JSON Schema của form lập đơn, phiên bản mới nhất. */
+  async latestStartSchema(key: string) {
+    const rt = await this.get(key);
+    const formKey = formKeyOf(rt.key, rt.version, 'start');
+    const s = await this.schemaByKey(formKey);
+    if (!s) throw new NotFoundException(`JSON Schema "${formKey}" was not found`);
+    return s;
+  }
+
+  /** Deploy form của các phiên bản chưa có trên Flowable (vd. Flowable mới dựng, hoặc lúc lưu Flowable đang tắt). */
+  private async syncForms() {
+    const have = await this.forms.keys();
+    const { rows } = await this.db.query<VersionRow & { type_key: string }>(
+      'SELECT * FROM app.request_type_versions ORDER BY type_key, version',
+    );
+    let n = 0;
+    for (const r of rows) {
+      const v = toVersion(r);
+      for (const form of [startForm(r.type_key, v), approveForm(r.type_key, v)]) {
+        if (have.has(form.key)) continue;
+        await this.forms.deploy(form);
+        n++;
+      }
+    }
+    if (n) this.log.log(`Deployed ${n} missing form(s) to Flowable`);
+  }
+
+  /** Deploy hai form của một phiên bản lên Flowable. */
+  private async deployVersion(key: string, v: TypeVersion) {
+    await this.forms.deploy(startForm(key, v));
+    await this.forms.deploy(approveForm(key, v));
   }
 
   async onModuleDestroy() {
@@ -103,12 +196,19 @@ export class RequestTypesService implements OnModuleInit, OnModuleDestroy {
     return rows[0] ? toVersion(rows[0]) : null;
   }
 
-  /** Form theo formKey "<loại đơn>:<phiên bản>:<start|approve>". Không có thì trả null. */
+  /**
+   * Form definition theo formKey "<loại đơn>:<phiên bản>:<start|approve>", lấy từ form engine của Flowable.
+   * Flowable chưa có (lúc lưu Flowable đang tắt) mà phiên bản còn trong DB thì deploy bù rồi lấy lại. Không có thì null.
+   */
   async formByKey(formKey: unknown) {
     const k = parseFormKey(formKey);
-    const v = k && (await this.version(k.key, k.version));
-    if (!k || !v) return null;
-    return k.kind === 'start' ? startForm(k.key, v) : approveForm(k.key, v);
+    if (!k) return null;
+    const form = await this.forms.get(formKey as string);
+    if (form) return form;
+    const v = await this.version(k.key, k.version);
+    if (!v) return null;
+    await this.deployVersion(k.key, v);
+    return this.forms.get(formKey as string);
   }
 
   /**
@@ -116,11 +216,10 @@ export class RequestTypesService implements OnModuleInit, OnModuleDestroy {
    * Ô bỏ trống ('' / null) coi như không điền; "2" của ô số được đổi thành 2 (coerceTypes). Trả về dữ liệu đã chuẩn hoá.
    */
   async checkStartValues(key: string, values: unknown) {
-    const rt = await this.get(key);
-    const form = startForm(rt.key, rt.versions.at(-1)!);
-    const { schema } = toJsonSchema(form);
-    let validate = this.validators.get(form.key);
-    if (!validate) this.validators.set(form.key, (validate = ajv.compile(schema)));
+    // cùng JSON Schema đã lưu theo formKey (app.form_schemas) mà rjsf dùng; renderer nào gửi lên cũng kiểm tra như nhau
+    const { key: formKey, schema } = await this.latestStartSchema(key);
+    let validate = this.validators.get(formKey);
+    if (!validate) this.validators.set(formKey, (validate = ajv.compile(schema)));
 
     const data: Record<string, unknown> = Object.fromEntries(
       Object.entries(values && typeof values === 'object' ? values : {}).filter(([, v]) => v !== '' && v != null),
@@ -152,6 +251,10 @@ export class RequestTypesService implements OnModuleInit, OnModuleDestroy {
       const key = typeKeyFor(name, new Set(taken));
       await c.query('INSERT INTO app.request_types (key, name, latest_version, updated_by) VALUES ($1, $2, 1, $3)', [key, name, userId]);
       await this.insertVersion(c, key, 1, name, fields, userId);
+      const v: TypeVersion = { version: 1, name, fields, savedAt: '', savedBy: userId };
+      await this.storeSchemas(c, key, v); // cách 2: JSON Schema theo formKey
+      // cách 1: deploy trước khi commit; Flowable lỗi thì không lưu gì (form thừa trên Flowable vô hại, key có phiên bản)
+      await this.deployVersion(key, v);
       return key;
     });
     return this.get(key);
@@ -166,6 +269,9 @@ export class RequestTypesService implements OnModuleInit, OnModuleDestroy {
       if (!head) throw new NotFoundException(`Request type "${key}" was not found`);
       const version = head.latest_version + 1;
       await this.insertVersion(c, key, version, name, fields, userId);
+      const v: TypeVersion = { version, name, fields, savedAt: '', savedBy: userId };
+      await this.storeSchemas(c, key, v); // cách 2: JSON Schema theo formKey
+      await this.deployVersion(key, v); // cách 1: form definition lên Flowable
       await c.query(
         'UPDATE app.request_types SET name = $2, latest_version = $3, updated_at = now(), updated_by = $4 WHERE key = $1',
         [key, name, version, userId],
