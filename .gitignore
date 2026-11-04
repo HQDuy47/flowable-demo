@@ -5,7 +5,3 @@ dist/
 
 # Cấu hình máy local — xem backend/.env.example
 .env
-
-# deploy.ps1 tự đóng gói lại mỗi lần chạy
-flowable/leave-app.bar
-flowable/leave-app.zip

@@ -11,16 +11,14 @@ import { useStartProcess } from '../hooks';
 import { ProcessPicker } from './ProcessPicker';
 
 /** Form lập đơn cho một loại đơn: tiêu đề + nút, chọn loại đơn, các trường (renderer tự viết hoặc rjsf), thông tin giao dịch. */
-export function CreateRequestForm({ process, processes, employee, form, initial, onSent }: {
+export function CreateRequestForm({ process, processes, employee, form, onSent }: {
   process: Process; processes: Process[]; employee?: User; form: SchemaFormDef;
-  /** giá trị điền sẵn, vd. họ tên người lập đơn */
-  initial: FormValues;
   onSent: () => void;
 }) {
   const start = useStartProcess();
   const ref = useRef<DynamicFormRef>(null);
   const [renderer] = useFormRenderer();
-  const [data, setData] = useState<FormValues>(initial);
+  const [data, setData] = useState<FormValues>({});
   const [round, setRound] = useState(0); // tăng khi Reset để form vẽ lại từ đầu (xoá lỗi đang hiện)
 
   const submit = () => {
@@ -33,7 +31,7 @@ export function CreateRequestForm({ process, processes, employee, form, initial,
       onError: err => toast.error('The request was not submitted.', { description: errorMessage(err) }),
     });
   };
-  const reset = () => { setData(initial); setRound(r => r + 1); };
+  const reset = () => { setData({}); setRound(r => r + 1); };
 
   return (
     <>

@@ -28,7 +28,7 @@ const aria = ({ f, id, invalid }: FieldProps) => ({
 /* ---------- Mỗi kiểu ô một component ---------- */
 
 function TextField(p: FieldProps) {
-  return <input {...aria(p)} className="fi" type="text" autoComplete={p.f.id === 'employeeName' ? 'name' : 'off'}
+  return <input {...aria(p)} className="fi" type="text" autoComplete="off"
     value={String(p.value ?? '')} onChange={e => p.onChange(blankToUndef(e.target.value))} />;
 }
 

@@ -48,7 +48,5 @@ function StartFormLoader({ process, ...rest }: {
   if (form.isError) return <div className="pad"><Problem error={form.error} onRetry={() => form.refetch()} /></div>;
   if (!form.data) return <div className="pad"><Skeleton rows={8} /></div>;
 
-  // điền sẵn họ tên nhân viên đang lập đơn (nếu form có trường này)
-  const initial = employee && form.data.schema.properties?.employeeName ? { employeeName: employee.name } : {};
-  return <CreateRequestForm key={employee ? 'with-name' : 'no-name'} process={process} employee={employee} form={form.data} initial={initial} {...rest} />;
+  return <CreateRequestForm process={process} employee={employee} form={form.data} {...rest} />;
 }

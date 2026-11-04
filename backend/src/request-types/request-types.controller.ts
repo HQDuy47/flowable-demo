@@ -1,7 +1,7 @@
 import { Body, Controller, ForbiddenException, Get, Headers, Param, Post, Put } from '@nestjs/common';
+import { findUser } from '../common/users.js';
 import { RequestTypesService } from './request-types.service.js';
-import type { RequestTypeInput } from './request-types.js';
-import { findUser } from './users.js';
+import type { RequestTypeInput } from './request-type.model.js';
 
 /** Thiết kế loại đơn. Chỉ người dùng có vai trò admin (header "x-user-id"). */
 @Controller('api/request-types')
