@@ -1,0 +1,25 @@
+{
+  "name": "@demo/shared",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Mã dùng chung cho shell và các app con: UI kit, bộ vẽ form, http, phiên đăng nhập, token CSS.",
+  "exports": {
+    "./ui": "./src/ui/index.ts",
+    "./form": "./src/form/index.ts",
+    "./api/http": "./src/api/http.ts",
+    "./auth/session": "./src/auth/session.ts",
+    "./lib/format": "./src/lib/format.ts",
+    "./styles.css": "./src/styles/index.css"
+  },
+  "dependencies": {
+    "@rjsf/core": "^6.11.0",
+    "@rjsf/utils": "^6.11.0",
+    "@rjsf/validator-ajv8": "^6.11.0",
+    "axios": "^1.21.0"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.105.0",
+    "react": "^19.3.1"
+  }
+}

@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .hallmark/shots/
+
+# Module Federation: file chẩn đoán / type tự sinh
+.mf/
+@mf-types/
