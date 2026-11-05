@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { approvalKeys } from '../approvals/hooks';
 import { requestsApi } from './api';
+
+/** Query key của hàng chờ duyệt bên checkerApp (src/approvals/hooks.ts), không import code của app khác. */
+const APPROVALS_KEY = ['approvals'] as const;
 
 export const requestKeys = {
   all: ['requests'] as const,
@@ -29,6 +31,6 @@ export function useStartProcess() {
   return useMutation({
     mutationFn: requestsApi.start,
     // không return promise: callback của component chạy ngay, không đợi tải lại (task biến mất làm component bị gỡ, callback sẽ không chạy)
-    onSuccess: () => { qc.invalidateQueries({ queryKey: approvalKeys.all }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: APPROVALS_KEY }); },
   });
 }

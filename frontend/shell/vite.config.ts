@@ -4,13 +4,14 @@ import react from '@vitejs/plugin-react';
 import { federation } from '@module-federation/vite';
 
 /** Địa chỉ của các app con; khi deploy thật thì đặt biến môi trường lúc build. */
-const MAKER_CHECKER_APP_URL = process.env.MAKER_CHECKER_APP_URL ?? 'http://localhost:5175';
+const MAKER_APP_URL = process.env.MAKER_APP_URL ?? 'http://localhost:5175';
+const CHECKER_APP_URL = process.env.CHECKER_APP_URL ?? 'http://localhost:5176';
 const ADMIN_APP_URL = process.env.ADMIN_APP_URL ?? 'http://localhost:5174';
 
 /**
  * shell: app chủ (host). Giữ đăng nhập, layout, menu, phân quyền.
  * Các màn nghiệp vụ là app con, tải lúc chạy qua Module Federation:
- * makerCheckerApp (New request, Approvals) và adminApp (Request types).
+ * makerApp (New request), checkerApp (Approvals) và adminApp (Request types).
  */
 export default defineConfig({
   plugins: [
@@ -19,7 +20,8 @@ export default defineConfig({
       name: 'shell',
       // các app con shell biết tới: tên → địa chỉ file remoteEntry.js
       remotes: {
-        makerCheckerApp: { type: 'module', name: 'makerCheckerApp', entry: `${MAKER_CHECKER_APP_URL}/remoteEntry.js` },
+        makerApp: { type: 'module', name: 'makerApp', entry: `${MAKER_APP_URL}/remoteEntry.js` },
+        checkerApp: { type: 'module', name: 'checkerApp', entry: `${CHECKER_APP_URL}/remoteEntry.js` },
         adminApp: { type: 'module', name: 'adminApp', entry: `${ADMIN_APP_URL}/remoteEntry.js` },
       },
       // phải khớp với khai báo shared của app con

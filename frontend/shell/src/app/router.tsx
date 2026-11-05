@@ -7,10 +7,11 @@ import { AppLayout } from './layout/AppLayout';
 const LoginPage = lazy(() => import('@/features/users/pages/LoginPage'));
 
 // Micro frontend: các trang dưới đây nằm ở app con, tải qua mạng lúc chạy
-// makerCheckerApp (frontend/makerCheckerApp, cổng 5175)
-const CreateRequestPage = lazy(() => import('makerCheckerApp/CreateRequestPage'));
-const ApprovalQueuePage = lazy(() => import('makerCheckerApp/ApprovalQueuePage'));
-const ApprovalDetailPage = lazy(() => import('makerCheckerApp/ApprovalDetailPage'));
+// makerApp (frontend/makerApp, cổng 5175)
+const CreateRequestPage = lazy(() => import('makerApp/CreateRequestPage'));
+// checkerApp (frontend/checkerApp, cổng 5176)
+const ApprovalQueuePage = lazy(() => import('checkerApp/ApprovalQueuePage'));
+const ApprovalDetailPage = lazy(() => import('checkerApp/ApprovalDetailPage'));
 // adminApp (frontend/adminApp, cổng 5174)
 const RequestTypesPage = lazy(() => import('adminApp/RequestTypesPage'));
 const RequestTypeEditorPage = lazy(() => import('adminApp/RequestTypeEditorPage'));
@@ -27,7 +28,8 @@ function RemoteUnavailable({ app, port, script }: { app: string; port: number; s
     </div>
   );
 }
-const makerCheckerDown = <RemoteUnavailable app="makerCheckerApp" port={5175} script="dev:mc" />;
+const makerDown = <RemoteUnavailable app="makerApp" port={5175} script="dev:maker" />;
+const checkerDown = <RemoteUnavailable app="checkerApp" port={5176} script="dev:checker" />;
 const adminDown = <RemoteUnavailable app="adminApp" port={5174} script="dev:admin" />;
 
 /** Chuyển link cũ (#/tao/..., #/duyet/...) sang đường dẫn mới, giữ nguyên phần id. */
@@ -46,9 +48,9 @@ export const router = createHashRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <Navigate to="/new" replace /> },
-      { path: 'new/:processId?', element: <CreateRequestPage />, errorElement: makerCheckerDown },
-      { path: 'approvals', element: <ApprovalQueuePage />, errorElement: makerCheckerDown },
-      { path: 'approvals/:taskId', element: <ApprovalDetailPage />, errorElement: makerCheckerDown },
+      { path: 'new/:processId?', element: <CreateRequestPage />, errorElement: makerDown },
+      { path: 'approvals', element: <ApprovalQueuePage />, errorElement: checkerDown },
+      { path: 'approvals/:taskId', element: <ApprovalDetailPage />, errorElement: checkerDown },
       { path: 'request-types', element: <RequestTypesPage />, errorElement: adminDown },
       { path: 'request-types/:key', element: <RequestTypeEditorPage />, errorElement: adminDown },
       // link cũ tiếng Việt

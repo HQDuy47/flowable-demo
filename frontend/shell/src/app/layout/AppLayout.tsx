@@ -6,11 +6,11 @@ import { http } from '@demo/shared/api/http';
 import { getSession, type SessionUser } from '@demo/shared/auth/session';
 import { code, initials } from '@demo/shared/lib/format';
 import { Cmd, Ic, Skeleton } from '@demo/shared/ui';
-import { homeOf, NAV, navOf, TAB_TITLE } from './nav';
+import { canSee, homeOf, NAV, navOf, TAB_TITLE } from './nav';
 
 /**
- * Hàng chờ của checker, shell tự đọc thay vì import code của app con makerCheckerApp.
- * Dùng CÙNG query key với makerCheckerApp (src/approvals/hooks.ts) nên hai bên chung một cache:
+ * Hàng chờ của checker, shell tự đọc thay vì import code của app con checkerApp.
+ * Dùng CÙNG query key với checkerApp (src/approvals/hooks.ts) nên hai bên chung một cache:
  * checker duyệt xong trong app con thì số đơn chờ trên menu của shell tự giảm.
  */
 const PENDING_TASKS_KEY = ['approvals', 'tasks'] as const;
@@ -27,7 +27,7 @@ export function AppLayout() {
   const user = getSession();
   if (!user) return <Navigate to="/login" replace />;
   const current = navOf(pathname);
-  if (!current || current.role !== user.role) return <Navigate to={homeOf(user.role)} replace />;
+  if (!current || !canSee(current, user.role)) return <Navigate to={homeOf(user.role)} replace />;
   return <Shell user={user} current={current} />;
 }
 
@@ -45,10 +45,10 @@ function Shell({ user, current }: { user: SessionUser; current: (typeof NAV)[num
     return () => { document.title = prev; };
   }, [user.role]);
 
-  const items = NAV.filter(n => n.role === user.role);
+  const items = NAV.filter(n => canSee(n, user.role));
   const home = homeOf(user.role);
-  // Hàng chờ nằm ở đây để menu hiện số đơn chờ duyệt (chỉ người duyệt)
-  const tasks = usePendingTasks(user.role === 'approver');
+  // Hàng chờ nằm ở đây để menu hiện số đơn chờ duyệt (người duyệt và superadmin)
+  const tasks = usePendingTasks(user.role === 'approver' || user.role === 'superadmin');
   const taskMatch = useMatch('/approvals/:taskId');
   const openTask = taskMatch ? tasks.data?.find(t => t.id === taskMatch.params.taskId) : undefined;
 

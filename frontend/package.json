@@ -4,12 +4,15 @@
   "workspaces": [
     "shared",
     "shell",
-    "makerCheckerApp",
+    "makerApp",
+    "checkerApp",
     "adminApp"
   ],
   "scripts": {
     "dev": "npm run dev -w shell",
-    "dev:mc": "npm run dev -w maker-checker-app",
+    "dev:all": "node dev-all.mjs",
+    "dev:maker": "npm run dev -w maker-app",
+    "dev:checker": "npm run dev -w checker-app",
     "dev:admin": "npm run dev -w admin-app",
     "build": "npm run build -w shell"
   }

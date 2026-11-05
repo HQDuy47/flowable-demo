@@ -39,7 +39,7 @@ export default function LoginPage() {
           <span>Sign in</span>
         </button>
         <p className="login__hint">
-          Demo accounts (password <code>123456</code>): <code>maker</code>, <code>checker</code>, <code>admin</code>.
+          Demo accounts (password <code>123456</code>): <code>maker</code>, <code>checker</code>, <code>admin</code>, <code>superadmin</code>.
         </p>
       </form>
     </main>

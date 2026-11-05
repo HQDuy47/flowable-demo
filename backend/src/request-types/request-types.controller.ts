@@ -1,5 +1,5 @@
 import { Body, Controller, ForbiddenException, Get, Headers, Param, Post, Put } from '@nestjs/common';
-import { findUser } from '../common/users.js';
+import { canDesign } from '../common/users.js';
 import { RequestTypesService } from './request-types.service.js';
 import type { RequestTypeInput } from './request-type.model.js';
 
@@ -9,7 +9,7 @@ export class RequestTypesController {
   constructor(private readonly types: RequestTypesService) {}
 
   private admin(userId: string) {
-    if (findUser(userId)?.role !== 'admin') throw new ForbiddenException('Only an administrator can design request types');
+    if (!canDesign(userId)) throw new ForbiddenException('Only an administrator can design request types');
     return userId;
   }
 

@@ -9,7 +9,7 @@ import {
 import { HttpService } from '@nestjs/axios';
 import type { AxiosRequestConfig } from 'axios';
 import { flowableRequest } from '../common/flowable-http.js';
-import { findUser, userRef } from '../common/users.js';
+import { findUser, isSuperadmin, userRef } from '../common/users.js';
 import { formKeyOf } from '../forms/form-definition.js';
 import { FormSchemasService } from '../forms/form-schemas.service.js';
 import { RequestTypesService } from '../request-types/request-types.service.js';
@@ -114,7 +114,7 @@ export class WorkflowService implements OnModuleInit {
   }
 
   private call<T = unknown>(
-    method: 'get' | 'post' | 'delete',
+    method: 'get' | 'post' | 'put' | 'delete',
     url: string,
     data?: unknown,
     config?: AxiosRequestConfig,
@@ -301,10 +301,10 @@ export class WorkflowService implements OnModuleInit {
     };
   }
 
-  /** Việc đang chờ user xử lý, kèm thông tin đơn. */
+  /** Việc đang chờ user xử lý, kèm thông tin đơn. Superadmin thấy việc chờ của mọi người. */
   async listTasks(assignee: string) {
     const res = await this.call<Page<FlowableTask>>('post', '/query/tasks', {
-      assignee,
+      ...(isSuperadmin(assignee) ? {} : { assignee }),
       includeProcessVariables: true,
       sort: 'createTime',
       order: 'desc',
@@ -417,7 +417,7 @@ export class WorkflowService implements OnModuleInit {
     userId: string,
   ) {
     const task = await this.getTask(taskId);
-    if (task.assignee !== userId)
+    if (task.assignee !== userId && !isSuperadmin(userId))
       throw new ForbiddenException('This task is not assigned to you');
     const form = await this.formOf(task);
     // gateway rẽ nhánh theo "decision": kết quả lạ thì Flowable không tìm được nhánh nào
@@ -437,10 +437,17 @@ export class WorkflowService implements OnModuleInit {
     ]);
     const variables = this.toVariables(data);
     if (outcome) variables.push({ name: 'decision', value: outcome }); // gateway đọc biến này
-    await this.call('post', `/runtime/tasks/${taskId}`, {
-      action: 'complete',
-      variables,
-    });
+    // superadmin duyệt thay: chuyển task sang superadmin ngay trước khi hoàn thành để lịch sử ghi đúng người duyệt;
+    // hoàn thành lỗi thì trả task lại cho người cũ, không để task kẹt ở superadmin
+    const reassign = task.assignee !== userId;
+    if (reassign) await this.call('put', `/runtime/tasks/${taskId}`, { assignee: userId });
+    try {
+      await this.call('post', `/runtime/tasks/${taskId}`, { action: 'complete', variables });
+    } catch (e) {
+      if (reassign)
+        await this.call('put', `/runtime/tasks/${taskId}`, { assignee: task.assignee }).catch(() => undefined);
+      throw e;
+    }
     return { ok: true };
   }
 }

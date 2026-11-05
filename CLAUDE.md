@@ -7,7 +7,7 @@ Demo quy trình đơn từ (lập đơn → trưởng phòng duyệt) chạy tr�
 | PostgreSQL | database `flowable6`: dữ liệu Flowable (bảng `act_*`, form engine `act_fo_*`); database `flowable`: loại đơn (schema `app`) | 5433 |
 | Flowable REST 6.8.0 | điều phối quy trình + form engine (lưu form definition) | 8081 |
 | `backend/` | NestJS BFF, gọi Flowable REST, gộp dữ liệu cho UI | 3000 |
-| `frontend/` | React 19 + Vite admin UI | 5173 (proxy `/api` → 3000) |
+| `frontend/` | React 19 + Vite, micro frontend (Module Federation): `shell` + app con `makerApp`, `checkerApp`, `adminApp` | shell 5173, adminApp 5174, makerApp 5175, checkerApp 5176 (đều proxy `/api` → 3000) |
 
 Người dùng nói tiếng Việt: trả lời bằng tiếng Việt. Comment trong code viết tiếng Việt; chữ trên giao diện và thông báo lỗi từ backend viết tiếng Anh.
 
@@ -17,7 +17,7 @@ Người dùng nói tiếng Việt: trả lời bằng tiếng Việt. Comment t
 docker compose up -d                        # flowable/flowable-rest:6.8.0 + PostgreSQL 16 (volume flowable-db-data)
 cd backend;  npm run start:dev              # watch mode, người dùng thường đã bật sẵn
 cd backend;  npm run seed                   # tạo 2 loại đơn mẫu nếu chưa có (cần backend đang chạy)
-cd frontend; npm run dev
+cd frontend; npm run dev:all               # cả 4 app (dev-all.mjs); hoặc riêng: dev (shell), dev:maker, dev:checker, dev:admin
 ```
 
 - `backend/.env`: `FLOWABLE_URL` (process API `.../flowable-rest/service`; form API suy ra `.../flowable-rest/form-api/form-repository`, hoặc đặt `FLOWABLE_FORM_URL`), `FLOWABLE_USER=rest-admin`, `FLOWABLE_PASSWORD=test`, `DATABASE_URL` (mặc định `postgres://flowable:flowable@localhost:5433/flowable`).
@@ -31,7 +31,7 @@ cd frontend; npm run dev
 - **Hai cách lưu form, để demo cạnh nhau** (mỗi phiên bản lưu cả hai lúc admin lưu, trong cùng transaction):
   - cách 1: form definition trên form engine Flowable (`formByKey`, endpoint `forms/:formKey`), renderer tự viết vẽ;
   - cách 2: JSON Schema + uiSchema + outcomes trong bảng `app.form_schemas` (khoá `form_key`, sinh bằng `toJsonSchema`; `FormSchemasService` lưu / đọc / kiểm tra bằng ajv, endpoint `forms/:formKey/json-schema`, `processes/:key/start-form`, `tasks/:id/form`), rjsf vẽ. Cột kiểu `json` (không phải `jsonb`, vì jsonb sắp lại key làm đảo thứ tự trường). Khởi động thì `syncSchemas` lưu bù phiên bản còn thiếu. ajv backend (`FormSchemasService.validate`) kiểm tra bằng schema này cho cả hai renderer. Id trường không được trùng các biến này (`RESERVED`).
-- Kiểm tra: `cd frontend; npx tsc -b; npx vite build`. Backend: `npm run build`.
+- Kiểm tra: `cd frontend; npm run build -w <shell|maker-app|checker-app|admin-app>` (tsc + vite build từng app). Backend: `npm run build`.
 - Cấu trúc backend (một `AppModule`, thư mục theo feature):
   - `common/`: `database.service.ts` (pg pool, `tx`), `flowable-http.ts` (gọi Flowable REST, đổi lỗi thành HttpException), `users.ts`;
   - `auth/`: `users`, `login`;
@@ -41,24 +41,25 @@ cd frontend; npm run dev
 
 ## Người dùng và vai trò
 
-Đăng nhập demo ở `#/login` qua `POST /api/login`. Mật khẩu chung là `123456` (`DEMO_PASSWORD` trong `backend/src/common/users.ts`), chưa có token. Phiên lưu ở sessionStorage, mỗi tab một phiên (`frontend/src/shared/auth/session.ts`). Axios interceptor tự gắn header `x-user-id`. Backend vẫn tin header này.
+Đăng nhập demo ở `#/login` qua `POST /api/login`. Mật khẩu chung là `123456` (`DEMO_PASSWORD` trong `backend/src/common/users.ts`), chưa có token. Phiên lưu ở sessionStorage, mỗi tab một phiên (`frontend/shared/src/auth/session.ts`). Axios interceptor tự gắn header `x-user-id`. Backend vẫn tin header này.
 
 | Id | Tên | Vai trò | Màn |
 |---|---|---|---|
 | `maker` | Nguyễn Văn An | employee (maker) | New request |
 | `checker` | Trần Minh Quân | approver (checker) | Approvals (phải khớp `flowable:assignee` trong BPMN) |
 | `admin` | Lê Thu Hà | admin | Request types |
+| `superadmin` | Phạm Quốc Bảo | superadmin | tất cả menu; thấy và duyệt được mọi đơn chờ (task được chuyển sang superadmin ngay trước khi hoàn thành, lỗi thì trả lại), thiết kế được loại đơn (`isSuperadmin`, `canDesign` trong `users.ts`) |
 
-Mỗi mục menu gắn một vai trò (`frontend/src/app/layout/nav.ts`). `AppLayout` chỉ hiện các mục của vai trò đó. Chưa đăng nhập thì chuyển về `/login`. Mở màn của vai trò khác thì bị đưa về màn đầu của vai trò mình. Topbar hiện người đăng nhập và nút **Sign out**.
+Mỗi mục menu gắn một vai trò (`frontend/shell/src/app/layout/nav.ts`, `canSee`: superadmin thấy tất cả). `AppLayout` chỉ hiện các mục vai trò đó được xem. Chưa đăng nhập thì chuyển về `/login`. Mở màn của vai trò khác thì bị đưa về màn đầu của vai trò mình. Topbar hiện người đăng nhập và nút **Sign out**.
 
 ## Flow của web
 
-Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
+Router dùng hash (`createHashRouter`, `frontend/shell/src/app/router.tsx`).
 
 ### 1. New request (`#/new/:processId?`, vai trò `maker`)
 1. `GET /api/processes` trả về các loại đơn (id = key loại đơn), xếp theo tên. Không có `processId` thì chuyển sang loại đầu tiên.
 2. Chọn loại đơn bằng các nút pill (`ProcessPicker`). `GET /api/processes/:id/start-form` tải form. Không điền sẵn ô nào.
-3. Form vẽ bằng một trong hai renderer, chọn bằng nút **Flowable form / JSON Schema** (`RendererSwitch`) trên hàng tiêu đề màn New request và Approvals (nhớ trong localStorage, `useFormRenderer`). `DynamicForm` (`shared/form/DynamicForm.tsx`) bọc cả hai, nút gửi ở ngoài form gọi `ref.current.validate()`:
+3. Form vẽ bằng một trong hai renderer, chọn bằng nút **Flowable form / JSON Schema** (`RendererSwitch`) trên hàng tiêu đề màn New request và Approvals (nhớ trong localStorage, `useFormRenderer`). `DynamicForm` (`frontend/shared/src/form/DynamicForm.tsx`) bọc cả hai, nút gửi ở ngoài form gọi `ref.current.validate()`:
    - **Flowable form + renderer tự viết** (`FlowableForm.tsx`): tải form definition từ Flowable qua `GET /api/forms/:formKey` (fields: id, name, type, required, readOnly, options, `params.rules`, `params.messages`), mỗi kiểu ô một component (`CONTROLS`), kiểm tra bằng `fieldProblem` (`validate.ts`) với câu lỗi lấy từ `params.messages` (backend sinh lúc deploy, cùng `errorMessages` với JSON Schema).
    - **JSON Schema + rjsf** (`SchemaForm.tsx`): JSON Schema + uiSchema lưu theo formKey trong `app.form_schemas`, rjsf tự vẽ ô và kiểm tra. Trang Preview của Request types chỉ dùng cách này.
    - Summary (New request) / Processing (Approvals) hiện `Form key`, `Form source`, `Renderer` theo cách đang chọn.
@@ -104,24 +105,28 @@ Router dùng hash (`createHashRouter`, `frontend/src/app/router.tsx`).
 
 Flowable điều phối (task, giao việc, rẽ nhánh) và giữ form definition (form engine, cách 1). JSON Schema của cách 2 nằm trong `app.form_schemas`. Cả hai tra theo cùng formKey mà Flowable gắn trên task.
 
-## Cấu trúc frontend (feature-based)
+## Cấu trúc frontend (micro frontend, npm workspaces)
 
 ```
-src/app/         App (QueryClient, Router, Devtools), router.tsx, layout/AppLayout.tsx, layout/nav.ts
-src/features/    requests/, approvals/, request-types/, users/: mỗi feature có api.ts, hooks.ts, components/, pages/, index.ts
-src/shared/      api/http.ts (axios, gắn x-user-id), auth/session.ts (phiên đăng nhập), form/ (DynamicForm, FlowableForm = renderer tự viết, SchemaForm = rjsf, RendererSwitch, DateInput, arrangeFields cho phần hiển thị đơn), lib/format.ts, ui/ (Cmd, Dialog, MessageBar, RecordHeader, Section, icons...)
-src/styles/      tokens.css, base.css, index.css
+frontend/shared/       @demo/shared: api/http.ts (axios, gắn x-user-id), auth/session.ts (phiên đăng nhập, Role), form/ (DynamicForm, FlowableForm = renderer tự viết, SchemaForm = rjsf, RendererSwitch, DateInput, arrangeFields), lib/format.ts, ui/ (Cmd, Dialog, MessageBar, RecordHeader, Section, icons...), styles/ (tokens.css, base.css, index.css)
+frontend/shell/        app chủ (host): src/app (App, router.tsx, layout/AppLayout.tsx, layout/nav.ts), src/features/users (LoginPage), src/remotes.d.ts
+frontend/makerApp/     app con: src/requests (New request), expose ./CreateRequestPage
+frontend/checkerApp/   app con: src/approvals (Approvals), expose ./ApprovalQueuePage, ./ApprovalDetailPage
+frontend/adminApp/     app con: src/request-types, expose ./RequestTypesPage, ./RequestTypeEditorPage
+frontend/dev-all.mjs   chạy cả 4 app (npm run dev:all)
 ```
 
-- Feature khác chỉ được import qua `index.ts` của feature. Alias `@/` trỏ tới `src`.
-- Dữ liệu lấy bằng React Query: query keys nằm trong `hooks.ts` của từng feature, mutation tự invalidate các key liên quan.
-- Mỗi trang là default export, nạp lazy trong router.
+- Shell tải trang của app con lúc chạy qua `remoteEntry.js` (`shell/vite.config.ts`, địa chỉ đặt bằng `MAKER_APP_URL`, `CHECKER_APP_URL`, `ADMIN_APP_URL`). Thêm trang mới ở app con thì phải sửa `exposes` của app con, `shell/src/app/router.tsx` và `shell/src/remotes.d.ts`.
+- react, react-dom, react-router-dom, @tanstack/react-query, sonner là singleton: cả 4 app chung một router, một cache, một toaster. `@demo/shared` không share, mỗi app tự đóng gói một bản.
+- App con không import code của nhau. Query key dùng chung viết lại thành hằng: `['approvals']` (makerApp invalidate sau khi gửi đơn), `['approvals','tasks']` (shell đếm đơn chờ), `['requests']` (adminApp invalidate sau khi lưu loại đơn). Đổi key ở checkerApp/makerApp thì sửa cả các hằng này.
+- Mỗi app con có `src/main.tsx` để chạy một mình (tự đăng nhập người dùng demo tương ứng). Route nào của app con không tải được thì chỉ màn đó báo lỗi (`errorElement` trong router của shell).
+- Dữ liệu lấy bằng React Query: query keys nằm trong `hooks.ts` của từng feature, mutation tự invalidate các key liên quan. Mỗi trang là default export, nạp lazy.
 
 ## Quy ước UI
 
 - Phong cách: sidebar navy, mục đang chọn màu vàng, nội dung nền trắng, font Inter.
 - Nút thao tác nằm trên hàng tiêu đề, bên phải (`RecordHeader actions`). Không có nút làm mới.
-- Thông báo thành công / thất bại của một thao tác dùng toast của `sonner` (`toast.success`, `toast.error`; `<Toaster>` trong `App.tsx`, màu gán bằng token cuối `index.css`). Lỗi tải dữ liệu vẫn hiện trên trang (`Problem`, có nút Retry).
+- Thông báo thành công / thất bại của một thao tác dùng toast của `sonner` (`toast.success`, `toast.error`; `<Toaster>` trong `shell/src/app/App.tsx` (và `main.tsx` của từng app con), màu gán bằng token cuối `index.css`). Lỗi tải dữ liệu vẫn hiện trên trang (`Problem`, có nút Retry).
 - Màu, font, khoảng cách chỉ dùng token trong `tokens.css`, không viết màu trực tiếp. Dòng đầu `index.css` là stamp của Hallmark: giữ nguyên.
 - Mọi thứ tương tác phải có `:focus-visible`. Svg icon có `aria-hidden`. Không dùng `transition: all`.
 - Người dùng hay đổi ý ("để lại như cũ"): sửa đúng phạm vi được yêu cầu, không tự đổi phần khác.

@@ -1,5 +1,5 @@
 /** Người dùng đã đăng nhập, lưu trong sessionStorage: mỗi tab một phiên riêng (tab maker, tab checker), F5 không mất. */
-export type Role = 'employee' | 'approver' | 'admin';
+export type Role = 'employee' | 'approver' | 'admin' | 'superadmin';
 export type SessionUser = { id: string; name: string; title: string; role: Role };
 
 /** Tham chiếu rút gọn tới một người, dùng trong đơn và task (shell và các app con cùng dùng). */

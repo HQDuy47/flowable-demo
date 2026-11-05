@@ -3,20 +3,18 @@ import react from '@vitejs/plugin-react';
 import { federation } from '@module-federation/vite';
 
 /**
- * makerCheckerApp: app con (remote) chứa màn lập đơn (maker) và duyệt đơn (checker). Chạy riêng ở cổng 5175.
+ * makerApp: app con (remote) chứa màn lập đơn (maker). Chạy riêng ở cổng 5175.
  * Shell tải file remoteEntry.js của app này lúc chạy rồi lấy các trang được "expose" bên dưới.
  */
 export default defineConfig({
   plugins: [
     react(),
     federation({
-      name: 'makerCheckerApp',
+      name: 'makerApp',
       filename: 'remoteEntry.js',
       // những gì app này cho phép shell tải về
       exposes: {
         './CreateRequestPage': './src/requests/pages/CreateRequestPage.tsx',
-        './ApprovalQueuePage': './src/approvals/pages/ApprovalQueuePage.tsx',
-        './ApprovalDetailPage': './src/approvals/pages/ApprovalDetailPage.tsx',
       },
       // thư viện dùng chung một bản với shell: app con dùng được router, cache và toast của shell
       shared: {
