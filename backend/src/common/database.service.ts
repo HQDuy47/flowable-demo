@@ -4,13 +4,13 @@ import pg from 'pg';
 /** Pool hoặc client của một transaction đang chạy: hàm ghi nhận cả hai để chạy được trong transaction. */
 export type Db = pg.Pool | pg.PoolClient;
 
-/** Kết nối PostgreSQL của app (DATABASE_URL, database "flowable", schema "app"). */
+/** Kết nối PostgreSQL của app (DATABASE_URL, database "flowable6", schema "app"). */
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   readonly pool = new pg.Pool({
     connectionString:
       process.env.DATABASE_URL ??
-      'postgres://flowable:flowable@localhost:5433/flowable',
+      'postgres://flowable:flowable@localhost:5433/flowable6',
   });
 
   query<R extends pg.QueryResultRow = any>(sql: string, params?: unknown[]) {

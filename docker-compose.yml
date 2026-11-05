@@ -1,19 +1,18 @@
 services:
-  # PostgreSQL lưu dữ liệu Flowable vào volume, restart không mất
+  # PostgreSQL lưu dữ liệu vào volume, restart không mất.
+  # Một database "flowable6": bảng act_* của Flowable (schema public) + loại đơn của backend (schema app).
   flowable-db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: flowable
+      POSTGRES_DB: flowable6
       POSTGRES_USER: flowable
       POSTGRES_PASSWORD: flowable
     ports:
       - "5433:5432"   # mở ra host để xem bằng DBeaver/psql; 5433 tránh đụng Postgres cài sẵn
     volumes:
       - flowable-db-data:/var/lib/postgresql/data
-      # tạo database flowable6 cho Flowable 6.8 (chỉ chạy khi volume trống)
-      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flowable -d flowable"]
+      test: ["CMD-SHELL", "pg_isready -U flowable -d flowable6"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -27,7 +26,6 @@ services:
         condition: service_healthy
     environment:
       # Image đã có sẵn driver postgresql; Flowable tự tạo bảng ACT_*/FLW_* lần đầu.
-      # Database riêng "flowable6": schema do Flowable 7.1 tạo trong "flowable" không chạy ngược được trên 6.8.
       SPRING_DATASOURCE_DRIVER-CLASS-NAME: org.postgresql.Driver
       SPRING_DATASOURCE_URL: jdbc:postgresql://flowable-db:5432/flowable6
       SPRING_DATASOURCE_USERNAME: flowable
