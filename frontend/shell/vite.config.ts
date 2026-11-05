@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { federation } from '@module-federation/vite';
+import { shellReactRefresh } from '../federation-refresh.mts';
 
 /** Địa chỉ của các app con; khi deploy thật thì đặt biến môi trường lúc build. */
 const MAKER_APP_URL = process.env.MAKER_APP_URL ?? 'http://localhost:5175';
@@ -16,6 +17,7 @@ const ADMIN_APP_URL = process.env.ADMIN_APP_URL ?? 'http://localhost:5174';
 export default defineConfig({
   plugins: [
     react(),
+    shellReactRefresh(), // cho app con dùng chung React Refresh của shell
     federation({
       name: 'shell',
       // các app con shell biết tới: tên → địa chỉ file remoteEntry.js

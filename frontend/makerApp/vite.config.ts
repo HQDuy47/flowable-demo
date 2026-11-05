@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { federation } from '@module-federation/vite';
+import { remoteReactRefresh } from '../federation-refresh.mts';
 
 /**
  * makerApp: app con (remote) chứa màn lập đơn (maker). Chạy riêng ở cổng 5175.
@@ -8,6 +9,7 @@ import { federation } from '@module-federation/vite';
  */
 export default defineConfig({
   plugins: [
+    remoteReactRefresh(), // hot reload cả khi trang nằm trong shell; phải đứng trước react()
     react(),
     federation({
       name: 'makerApp',

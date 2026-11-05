@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { federation } from '@module-federation/vite';
+import { remoteReactRefresh } from '../federation-refresh.mts';
 
 /**
  * checkerApp: app con (remote) chứa màn duyệt đơn (checker). Chạy riêng ở cổng 5176.
@@ -8,6 +9,7 @@ import { federation } from '@module-federation/vite';
  */
 export default defineConfig({
   plugins: [
+    remoteReactRefresh(), // hot reload cả khi trang nằm trong shell; phải đứng trước react()
     react(),
     federation({
       name: 'checkerApp',

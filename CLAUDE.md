@@ -114,11 +114,13 @@ frontend/makerApp/     app con: src/requests (New request), expose ./CreateReque
 frontend/checkerApp/   app con: src/approvals (Approvals), expose ./ApprovalQueuePage, ./ApprovalDetailPage
 frontend/adminApp/     app con: src/request-types, expose ./RequestTypesPage, ./RequestTypeEditorPage
 frontend/dev-all.mjs   chạy cả 4 app (npm run dev:all)
+frontend/federation-refresh.mts  plugin Vite cho hot reload của app con trong shell
 ```
 
 - Shell tải trang của app con lúc chạy qua `remoteEntry.js` (`shell/vite.config.ts`, địa chỉ đặt bằng `MAKER_APP_URL`, `CHECKER_APP_URL`, `ADMIN_APP_URL`). Thêm trang mới ở app con thì phải sửa `exposes` của app con, `shell/src/app/router.tsx` và `shell/src/remotes.d.ts`.
 - react, react-dom, react-router-dom, @tanstack/react-query, sonner là singleton: cả 4 app chung một router, một cache, một toaster. `@demo/shared` không share, mỗi app tự đóng gói một bản.
 - App con không import code của nhau. Query key dùng chung viết lại thành hằng: `['approvals']` (makerApp invalidate sau khi gửi đơn), `['approvals','tasks']` (shell đếm đơn chờ), `['requests']` (adminApp invalidate sau khi lưu loại đơn). Đổi key ở checkerApp/makerApp thì sửa cả các hằng này.
+- Hot reload (React Fast Refresh) cả khi trang app con nằm trong shell: mỗi Vite server có React Refresh runtime riêng, nên `frontend/federation-refresh.mts` cho shell để runtime của mình lên `window` (`shellReactRefresh`) và thay `/@react-refresh` của app con bằng lớp gọi sang runtime đó, chạy một mình thì dùng runtime của chính nó (`remoteReactRefresh`, phải đứng trước `react()` trong `plugins`).
 - Mỗi app con có `src/main.tsx` để chạy một mình (tự đăng nhập người dùng demo tương ứng). Route nào của app con không tải được thì chỉ màn đó báo lỗi (`errorElement` trong router của shell).
 - Dữ liệu lấy bằng React Query: query keys nằm trong `hooks.ts` của từng feature, mutation tự invalidate các key liên quan. Mỗi trang là default export, nạp lazy.
 
